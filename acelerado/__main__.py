@@ -82,10 +82,14 @@ async def check_new_videos():
         await asyncio.sleep(300)
 
 
-async def main():
+async def amain():
     async with bot:
         await bot.start(config["DISCORD_TOKEN"])
 
 
+def main():
+    asyncio.run(amain())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
