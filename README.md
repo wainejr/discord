@@ -59,12 +59,14 @@ Caso encontre algum bug, por favor, abra uma issue detalhando o máximo possíve
 
 [Servidor do Discord](https://discord.gg/RHuhFcfzyV)
 
+[@waine_jr no Instagram](https://instagram.com/waine_jr)
+
 ## Licença
 
 Este projeto é licenciado sob a [MIT License](./LICENSE).
 
 ## Contato
 
-Para dúvidas ou mais informações, entre em contato pelo servidor do Discord ou comente no canal do YouTube.
+Para dúvidas ou mais informações, entre em contato pelo servidor do Discord, comente no canal do YouTube.
 
 Obrigado por fazer parte da nossa comunidade!
