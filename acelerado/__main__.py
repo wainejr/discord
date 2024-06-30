@@ -65,13 +65,13 @@ async def check_new_videos():
         if video:
             video_id = video["id"]["videoId"]
             # Trecho Abaixo usado para testar
-            if(latest_video_id is None):
-               latest_video_id = video_id
-               video_title = video['snippet']['title']
-               video_url = f'https://www.youtube.com/watch?v={video_id}'
-               channel = bot.get_channel(DISCORD_CHANNEL_ID)
-               print(bot, channel, DISCORD_CHANNEL_ID)
-               await channel.send(f'Novo vídeo: **{video_title}**\n{video_url}')
+            # if(latest_video_id is None):
+            #    latest_video_id = video_id
+            #    video_title = video['snippet']['title']
+            #    video_url = f'https://www.youtube.com/watch?v={video_id}'
+            #    channel = bot.get_channel(DISCORD_CHANNEL_ID)
+            #    print(bot, channel, DISCORD_CHANNEL_ID)
+            #    await channel.send(f'Novo vídeo: **{video_title}**\n{video_url}')
 
             if video_id != latest_video_id:
                 latest_video_id = video_id
