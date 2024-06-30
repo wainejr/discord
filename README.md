@@ -55,8 +55,9 @@ Caso encontre algum bug, por favor, abra uma issue detalhando o máximo possíve
 
 ## Links Importantes
 
-[Canal do YouTube](https://www.youtube.com/@waine_jr).
-[Servidor do Discord](https://discord.gg/RHuhFcfzyV).
+[Canal do YouTube](https://www.youtube.com/@waine_jr)
+
+[Servidor do Discord](https://discord.gg/RHuhFcfzyV)
 
 ## Licença
 
