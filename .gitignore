@@ -1,5 +1,5 @@
 #git ignore humano rs
-Token.py
+.env
 discord
 
 # Created by https://www.toptal.com/developers/gitignore/api/python
