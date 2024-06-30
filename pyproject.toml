@@ -15,7 +15,6 @@ classifiers = [
 packages = [{include = "acelerado"}]
 
 [tool.poetry.scripts]
-# TODO: check if it is correct
 acelerado = "acelerado.__main__:main"
 
 [tool.poetry.dependencies]

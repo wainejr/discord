@@ -21,7 +21,7 @@ if not all(s in config for s in required_keys):
 bot = commands.Bot(command_prefix="/", intents=disc.Intents.default())
 
 # Configurações do bot
-DISCORD_CHANNEL_ID = config["DISCORD_CHANNEL_ID"]
+DISCORD_CHANNEL_ID = int(config["DISCORD_CHANNEL_ID"])
 
 # Configuração da API do YouTube
 youtube = build("youtube", "v3", developerKey=config["YOUTUBE_API_KEY"])
@@ -54,7 +54,6 @@ async def on_ready():
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} command(s)")
         await check_new_videos()
-
     except Exception as e:
         print(f"Error Syncing commads: {e}")
 
@@ -66,13 +65,14 @@ async def check_new_videos():
         if video:
             video_id = video["id"]["videoId"]
             # Trecho Abaixo usado para testar
-            # if(latest_video_id == None):
-            #    latest_video_id = video_id
-            #    video_title = video['snippet']['title']
-            #    video_url = f'https://www.youtube.com/watch?v={video_id}'
-            #    channel = bot.get_channel(DISCORD_CHANNEL_ID)
-            #    await channel.send(f'Novo vídeo: **{video_title}**\n{video_url}')
-            #
+            if(latest_video_id is None):
+               latest_video_id = video_id
+               video_title = video['snippet']['title']
+               video_url = f'https://www.youtube.com/watch?v={video_id}'
+               channel = bot.get_channel(DISCORD_CHANNEL_ID)
+               print(bot, channel, DISCORD_CHANNEL_ID)
+               await channel.send(f'Novo vídeo: **{video_title}**\n{video_url}')
+
             if video_id != latest_video_id:
                 latest_video_id = video_id
                 video_title = video["snippet"]["title"]
