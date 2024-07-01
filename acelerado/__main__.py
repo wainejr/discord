@@ -44,6 +44,11 @@ async def get_latest_video():
 
 latest_video_id = None
 
+
+async def send_msg(channel, msg: str):
+    logger.info(f"Sending msg: {msg!r}\t")
+    # await channel.send(msg)
+
 async def check_new_videos():
     global latest_video_id
     video = await get_latest_video()
@@ -58,12 +63,13 @@ async def check_new_videos():
         #    channel = bot.get_channel(DISCORD_CHANNEL_ID)
         #    print(bot, channel, DISCORD_CHANNEL_ID)
         #    await channel.send(f'Novo vídeo: **{video_title}**\n{video_url}')
+
         if video_id != latest_video_id:
             latest_video_id = video_id
             video_title = video["snippet"]["title"]
             video_url = f"https://www.youtube.com/watch?v={video_id}"
             channel = bot.get_channel(DISCORD_CHANNEL_ID)
-            await channel.send(f"Novo vídeo: **{video_title}**\n{video_url}")
+            await send_msg(channel, f"Novo vídeo: **{video_title}**\n{video_url}")
 
 @bot.event
 async def on_ready():
@@ -76,11 +82,15 @@ async def on_ready():
     )
 
     # Update latest video, to not post this one
-    latest_video_id = await get_latest_video()
+    video = await get_latest_video()
+    if video:
+        latest_video_id = video["id"]["videoId"]
+    logger.info(f"latest video ID on start is {latest_video_id}")
 
     while True:
         try:
-            synced = await bot.tree.sync()
+            # synced = await bot.tree.sync()
+            synced = []
             logger.info(f"Synced {len(synced)} command(s)")
         except Exception as e:
             logger.error(f"Error Syncing commads: {e}")
