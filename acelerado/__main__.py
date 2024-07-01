@@ -1,4 +1,5 @@
 import asyncio
+from acelerado.log import logger
 
 from dotenv import dotenv_values
 from googleapiclient.discovery import build
@@ -43,7 +44,7 @@ async def get_latest_video():
 
 @bot.event
 async def on_ready():
-    print(f"Logged on as {bot.user}!")
+    logger.info(f"Logged on as {bot.user}!")
     await bot.change_presence(
         activity=disc.Activity(
             type=disc.ActivityType.watching, name="Waine - Dev do desemepenho"
@@ -52,10 +53,10 @@ async def on_ready():
 
     try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s)")
+        logger.info(f"Synced {len(synced)} command(s)")
         await check_new_videos()
     except Exception as e:
-        print(f"Error Syncing commads: {e}")
+       logger.error(f"Error Syncing commads: {e}")
 
 
 async def check_new_videos():
