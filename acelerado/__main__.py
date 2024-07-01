@@ -134,7 +134,8 @@ async def on_ready():
     # Update latest video, to not post this one
     latest_video = get_latest_video()
     logger.info(f"latest video on start is {latest_video}")
-    latest_video = {"id": "", "title": ""}
+    # Uncomment to add latest video on startup
+    # latest_video = {"id": "", "title": ""}
 
     while True:
         try:
