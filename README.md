@@ -15,12 +15,15 @@ pip install -U poetry
 poetry install
 ```
 
-Após isso, copiar o arquivo `.example.env` para `.env`, alterar as variáveis de ambiente.
+Após isso, copiar o arquivo `.example.env` para `.env`, alterar as variáveis de ambiente, e também o arquivo `credentials.example.json` para `credentials.json` com os valores da chave OAuth do Google.
+
 Então rodar o bot com
 
 ```
 poetry run acelerado
 ```
+
+Na primeira vez que rodar, vai ser necessário fazer o consentimento no navegador.
 
 ## Como Contribuir
 
