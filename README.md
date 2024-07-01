@@ -29,6 +29,8 @@ Na primeira vez que rodar, vai ser necessário fazer o consentimento no navegado
 
 Todos são bem-vindos para contribuir com o projeto. Siga as instruções abaixo para começar:
 
+[Documentação do Discord.py](https://discordpy.readthedocs.io/en/stable/search.html?q=choice)
+
 1. Faça um fork do repositório.
 2. Clone o seu fork:
    ```sh
