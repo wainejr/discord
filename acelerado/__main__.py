@@ -34,7 +34,8 @@ DISCORD_CHANNEL_ID = int(config["DISCORD_CHANNEL_ID"])
 SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 
 
-def get_authenticated_service():
+def get_authenticated_youtube_token():
+    """Using YouTube via token, we get ALL the videos, even the ones that were not published yet"""
     creds = None
     if os.path.exists("token.pickle"):
         with open("token.pickle", "rb") as token:
@@ -50,9 +51,13 @@ def get_authenticated_service():
             pickle.dump(creds.to_json(), token)
     return build("youtube", "v3", credentials=creds)
 
+# This one doesn't fetch members and private videos
+def get_authenticated_youtube_key():
+    """Using YouTube via key, we don't get members only and private videos."""
+    return build("youtube", "v3", developerKey=config["YOUTUBE_API_KEY"])
 
 # Configuração da API do YouTube
-youtube = get_authenticated_service()
+youtube = get_authenticated_youtube_key()
 
 
 def get_upload_playlist_id() -> int:
