@@ -24,6 +24,7 @@ if not all(s in config for s in required_keys):
 # OAuth 2.0 scopes
 SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 
+
 def get_creds():
     creds = None
     if os.path.exists("token.pickle"):
@@ -41,25 +42,27 @@ def get_creds():
             pickle.dump(content_write, token)
     return creds
 
+
 def get_authenticated_youtube_token():
     """Using YouTube via token, we get ALL the videos, even the ones that were not published yet"""
     creds = get_creds()
     return build("youtube", "v3", credentials=creds)
+
 
 def get_token_expiration_date() -> None | datetime:
     creds = get_creds()
 
     with open("token.pickle", "rb") as token:
         cred_json = pickle.load(token)
-    print(cred_json)
     creds = Credentials.from_authorized_user_info(json.loads(cred_json), SCOPES)
     expiry = creds.expiry
 
     return expiry
 
-def get_time_to_expire() -> None | float:
+
+def get_token_time_to_expire() -> None | float:
     expire = get_token_expiration_date()
-    if(expire is None):
+    if expire is None:
         return None
 
     return (expire - datetime.now()).total_seconds()
@@ -145,8 +148,16 @@ def is_livestream(video: dict) -> bool:
     return "liveStreamingDetails" in video
 
 
-def is_private(video: dict) -> bool:
+def is_non_listed(video: dict) -> bool:
+    # Both members and public videos are listed as public.
+    # For private and non listed this is different
     return video["status"]["privacyStatus"] != "public"
+
+
+def is_processed(video: dict) -> bool:
+    # Both members and public videos are listed as public.
+    # For private and non listed this is different
+    return video["status"]["uploadStatus"] == "processed"
 
 
 def is_members_only(video: dict) -> bool:
