@@ -5,7 +5,9 @@ from acelerado import state,env
 import discord as disc
 from discord.ext import commands
 
-bot = commands.Bot(command_prefix="/", intents=disc.Intents.default())
+intents = disc.Intents.default()
+intents.members = True
+bot = commands.Bot(command_prefix="/", intents=intents)
 
 
 @bot.event
@@ -23,7 +25,7 @@ async def on_ready():
 
     while True:
         try:
-            synced = await bot.tree.sync()
+            # synced = await bot.tree.sync()
             synced = []
             logger.info(f"Synced {len(synced)} command(s)")
         except Exception as e:

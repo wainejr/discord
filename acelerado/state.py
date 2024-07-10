@@ -68,7 +68,27 @@ class AceleradoState:
         )
         log.logger.warn(f"Your token will expire in {int(expiration_time)} seconds. Renew it.")
 
+    async def check_members_apoiadores(self):
+        guild = self.bot.get_guild(env.get_env().DISCORD_GUILD_ID)
+        roles = guild.roles
+        yt_role = next(r for r in roles if r.name == "YouTube Member")
+        apoiadores_role = next(r for r in roles if r.name == "Apoiadores")
+
+        for member in yt_role.members:
+            if(apoiadores_role not in member.roles):
+                channel = next(c for c in guild.channels if c.name == "chat-exclusivo")
+                if(member.name == "eniaw"):
+                    continue
+                await member.add_roles(apoiadores_role)
+                await channel.send(f"Seja bem vindo aos apoiadores, <@{member.id}>!")
+                log.logger.info(f"Adding member {member} to Apoiadores!")
+
     async def event_loop(self):
+        try:
+            await self.check_members_apoiadores()
+        except BaseException as e:
+            log.logger.error("Error checking apoiadores", exc_info=True)
+
         try:
             await self.check_expiration()
         except BaseException as e:
