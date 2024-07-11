@@ -13,8 +13,10 @@ class AceleradoState:
         self.last_msg_expiry = datetime.now() - timedelta(days=7)
 
         self.initialize_videos_pubs()
-        if(self.channel_log is None or self.channel_announce is None):
-            raise ValueError(f"Unable to get channels log={self.channel_log} announce={self.channel_announce}")
+        if self.channel_log is None or self.channel_announce is None:
+            raise ValueError(
+                f"Unable to get channels log={self.channel_log} announce={self.channel_announce}"
+            )
 
     @property
     def channel_log(self):
@@ -34,7 +36,7 @@ class AceleradoState:
 
     def initialize_videos_pubs(self):
         filename = pathlib.Path("published.txt")
-        if(not filename.exists()):
+        if not filename.exists():
             latest_videos = youtube.get_last_videos(max_videos=20)
             videos_pubs = list()
             for video in latest_videos:
@@ -47,7 +49,7 @@ class AceleradoState:
 
     def add_video_published(self, video: dict):
         filename = pathlib.Path("published.txt")
-        if(not filename.exists()):
+        if not filename.exists():
             raise FileNotFoundError(f"File {filename} not found")
         with open(filename, "a") as f:
             f.write(f"\n{youtube.get_video_id(video)}")
@@ -55,7 +57,9 @@ class AceleradoState:
     def check_videos_to_pub(self) -> list[str]:
         latest_videos = youtube.get_last_videos(max_videos=10)
         return [
-            youtube.get_video_id(v) for v in latest_videos if youtube.get_video_id(v) not in self.videos_pubs
+            youtube.get_video_id(v)
+            for v in latest_videos
+            if youtube.get_video_id(v) not in self.videos_pubs
         ]
 
     def should_announce_video(self, video: dict) -> bool:
@@ -88,7 +92,9 @@ class AceleradoState:
         await self.channel_log.send(
             f"Renew your Token! It will expire in {int(expiration_time)} seconds (at {youtube.get_token_expiration_date()})."
         )
-        log.logger.warn(f"Your token will expire in {int(expiration_time)} seconds. Renew it.")
+        log.logger.warn(
+            f"Your token will expire in {int(expiration_time)} seconds. Renew it."
+        )
 
     async def check_members_apoiadores(self):
         guild = self.bot.get_guild(env.get_env().DISCORD_GUILD_ID)
@@ -97,9 +103,9 @@ class AceleradoState:
         apoiadores_role = next(r for r in roles if r.name == "Apoiadores")
 
         for member in yt_role.members:
-            if(apoiadores_role not in member.roles):
+            if apoiadores_role not in member.roles:
                 channel = next(c for c in guild.channels if c.name == "chat-exclusivo")
-                if(member.name == "eniaw"):
+                if member.name == "eniaw":
                     continue
                 await member.add_roles(apoiadores_role)
                 await channel.send(f"Seja bem vindo aos apoiadores, <@{member.id}>!")
@@ -120,8 +126,15 @@ class AceleradoState:
         try:
             for video_id in self.check_videos_to_pub():
                 video = youtube.get_video_info(video_id)
-                if(self.should_announce_video(video)):
+                if self.should_announce_video(video):
+                    log.logger.info(
+                        f"Announcing video {video_id} - '{youtube.get_video_title(video)}'!"
+                    )
                     self.announce_video(video)
+                else:
+                    log.logger.info(
+                        f"Not announcing video {video_id} - '{youtube.get_video_title(video)}' yet"
+                    )
         except BaseException as e:
             log.logger.error(f"Error on announcing videos. {e}", exc_info=True)
         log.logger.info("Finished event loop!")
