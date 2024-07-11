@@ -136,8 +136,8 @@ def get_video_id(video: dict) -> str:
     return video["snippet"]["resourceId"]["videoId"]
 
 
-def get_video_url(video: dict) -> str:
-    return f"https://www.youtube.com/watch?v={get_video_id(video)}"
+def get_video_url(v_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={v_id}"
 
 
 def get_video_title(video: dict) -> str:

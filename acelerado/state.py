@@ -47,12 +47,12 @@ class AceleradoState:
 
         log.logger.info(f"Videos published on start: {list(self.videos_pubs)}")
 
-    def add_video_published(self, video: dict):
+    def add_video_published(self, v_id: str):
         filename = pathlib.Path("published.txt")
         if not filename.exists():
             raise FileNotFoundError(f"File {filename} not found")
         with open(filename, "a") as f:
-            f.write(f"\n{youtube.get_video_id(video)}")
+            f.write(f"\n{v_id}")
 
     def check_videos_to_pub(self) -> list[str]:
         latest_videos = youtube.get_last_videos(max_videos=10)
@@ -67,16 +67,16 @@ class AceleradoState:
             return False
         return True
 
-    def announce_video(self, video: dict):
-        self.add_video_published(video)
+    def announce_video(self, v_id: str, video: dict):
+        self.add_video_published(v_id)
         msg = "Vídeo novo no canal!"
         if youtube.is_livestream(video):
             msg = "Estamos em live!"
         elif youtube.is_members_only(video):
             msg = "Vídeo novo pra membros!"
-        msg_send = f"@everyone {msg} **{youtube.get_video_title(video)}**\n{youtube.get_video_url(video)}"
+        msg_send = f"@everyone {msg} **{youtube.get_video_title(video)}**\n{youtube.get_video_url(v_id)}"
+        log.logger.info(f"Sending message: {msg_send}")
         self.channel_announce.send(msg_send)
-        log.logger.info(f"Sent message: {msg_send}")
 
     async def check_expiration(self):
         expiration_time = youtube.get_token_time_to_expire()
@@ -130,7 +130,7 @@ class AceleradoState:
                     log.logger.info(
                         f"Announcing video {video_id} - '{youtube.get_video_title(video)}'!"
                     )
-                    self.announce_video(video)
+                    self.announce_video(video_id, video)
                 else:
                     log.logger.info(
                         f"Not announcing video {video_id} - '{youtube.get_video_title(video)}' yet"
