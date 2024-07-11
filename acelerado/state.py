@@ -52,10 +52,10 @@ class AceleradoState:
         with open(filename, "a") as f:
             f.write(f"\n{youtube.get_video_id(video)}")
 
-    def check_videos_to_pub(self) -> list[dict]:
+    def check_videos_to_pub(self) -> list[str]:
         latest_videos = youtube.get_last_videos(max_videos=10)
         return [
-            v for v in latest_videos if youtube.get_video_id(v) not in self.videos_pubs
+            youtube.get_video_id(v) for v in latest_videos if youtube.get_video_id(v) not in self.videos_pubs
         ]
 
     def should_announce_video(self, video: dict) -> bool:
@@ -118,9 +118,10 @@ class AceleradoState:
             log.logger.error("Error cheking expiration", exc_info=True)
 
         try:
-            for v in self.check_videos_to_pub():
-                if(self.should_announce_video(v)):
-                    self.announce_video(v)
+            for video_id in self.check_videos_to_pub():
+                video = youtube.get_video_info(video_id)
+                if(self.should_announce_video(video)):
+                    self.announce_video(video)
         except BaseException as e:
             log.logger.error(f"Error on announcing videos. {e}", exc_info=True)
         log.logger.info("Finished event loop!")

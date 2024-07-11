@@ -151,16 +151,12 @@ def is_livestream(video: dict) -> bool:
 def is_non_listed(video: dict) -> bool:
     # Both members and public videos are listed as public.
     # For private and non listed this is different
-    if("status" not in video):
-        return True
     return video["status"]["privacyStatus"] != "public"
 
 
 def is_processed(video: dict) -> bool:
     # Both members and public videos are listed as public.
     # For private and non listed this is different
-    if("status" not in video):
-        return False
     return video["status"]["uploadStatus"] == "processed"
 
 
