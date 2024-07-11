@@ -63,7 +63,7 @@ class AceleradoState:
         ]
 
     def should_announce_video(self, video: dict) -> bool:
-        if not youtube.is_non_listed(video) or not youtube.is_processed(video):
+        if youtube.is_non_listed(video) or not youtube.is_processed(video):
             return False
         return True
 
