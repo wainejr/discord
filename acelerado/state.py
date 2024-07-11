@@ -1,3 +1,5 @@
+import pathlib
+
 from datetime import datetime, timedelta
 from acelerado import youtube, log, env
 
@@ -7,7 +9,6 @@ from discord.ext import commands
 class AceleradoState:
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        self.videos_pubs: set[str] = set()
         # Set last message as long time ago
         self.last_msg_expiry = datetime.now() - timedelta(days=7)
 
@@ -23,12 +24,33 @@ class AceleradoState:
     def channel_announce(self):
         return self.bot.get_channel(env.get_env().DISCORD_ANNOUNCE_CHANNEL_ID)
 
+    @property
+    def videos_pubs(self) -> list[str]:
+        filename = pathlib.Path("published.txt")
+        if not filename.exists():
+            raise FileNotFoundError(f"File {filename} not found")
+        with open(filename, "r") as f:
+            return f.read().split("\n")
+
     def initialize_videos_pubs(self):
-        latest_videos = youtube.get_last_videos(max_videos=20)
-        for video in latest_videos:
-            video_id = youtube.get_video_id(video)
-            self.videos_pubs.add(video_id)
+        filename = pathlib.Path("published.txt")
+        if(not filename.exists()):
+            latest_videos = youtube.get_last_videos(max_videos=20)
+            videos_pubs = list()
+            for video in latest_videos:
+                video_id = youtube.get_video_id(video)
+                videos_pubs.append(video_id)
+            with open(filename, "w") as f:
+                f.write("\n".join(list(videos_pubs)))
+
         log.logger.info(f"Videos published on start: {list(self.videos_pubs)}")
+
+    def add_video_published(self, video: dict):
+        filename = pathlib.Path("published.txt")
+        if(not filename.exists()):
+            raise FileNotFoundError(f"File {filename} not found")
+        with open(filename, "a") as f:
+            f.write(f"\n{youtube.get_video_id(video)}")
 
     def check_videos_to_pub(self) -> list[dict]:
         latest_videos = youtube.get_last_videos(max_videos=10)
@@ -42,7 +64,7 @@ class AceleradoState:
         return True
 
     def announce_video(self, video: dict):
-        self.videos_pubs.add(youtube.get_video_id(video))
+        self.add_video_published(video)
         msg = "Vídeo novo no canal!"
         if youtube.is_livestream(video):
             msg = "Estamos em live!"
@@ -84,6 +106,7 @@ class AceleradoState:
                 log.logger.info(f"Adding member {member} to Apoiadores!")
 
     async def event_loop(self):
+        log.logger.info("Started event loop...")
         try:
             await self.check_members_apoiadores()
         except BaseException as e:
@@ -100,3 +123,4 @@ class AceleradoState:
                     self.announce_video(v)
         except BaseException as e:
             log.logger.error(f"Error on announcing videos. {e}", exc_info=True)
+        log.logger.info("Finished event loop!")
