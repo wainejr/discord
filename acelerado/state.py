@@ -67,7 +67,7 @@ class AceleradoState:
             return False
         return True
 
-    def announce_video(self, v_id: str, video: dict):
+    async def announce_video(self, v_id: str, video: dict):
         self.add_video_published(v_id)
         msg = "Vídeo novo no canal!"
         if youtube.is_livestream(video):
@@ -76,7 +76,7 @@ class AceleradoState:
             msg = "Vídeo novo pra membros!"
         msg_send = f"@everyone {msg} **{youtube.get_video_title(video)}**\n{youtube.get_video_url(v_id)}"
         log.logger.info(f"Sending message: {msg_send}")
-        self.channel_announce.send(msg_send)
+        await self.channel_announce.send(msg_send)
 
     async def check_expiration(self):
         expiration_time = youtube.get_token_time_to_expire()
@@ -130,7 +130,7 @@ class AceleradoState:
                     log.logger.info(
                         f"Announcing video {video_id} - '{youtube.get_video_title(video)}'!"
                     )
-                    self.announce_video(video_id, video)
+                    await self.announce_video(video_id, video)
                 else:
                     log.logger.info(
                         f"Not announcing video {video_id} - '{youtube.get_video_title(video)}' yet"
