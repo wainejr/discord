@@ -1,7 +1,8 @@
 #git ignore humano rs
 .env
-credentials.json
-token.pickle
+credentials*
+!credentials.example.json
+token*
 discord
 published.txt
 
