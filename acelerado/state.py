@@ -63,9 +63,18 @@ class AceleradoState:
         ]
 
     def should_announce_video(self, video: dict) -> bool:
-        if youtube.is_non_listed(video) or not youtube.is_processed(video):
+        if youtube.is_non_listed(video) or (
+            not youtube.is_processed(video) and not youtube.is_livestream(video)
+        ):
             return False
         return True
+
+    def get_video_state(self, video: dict) -> dict:
+        return {
+            "non-listed": youtube.is_non_listed(video),
+            "is-processed": youtube.is_processed(video),
+            "is-livestream": youtube.is_livestream(video),
+        }
 
     async def announce_video(self, v_id: str, video: dict):
         self.add_video_published(v_id)
@@ -133,7 +142,7 @@ class AceleradoState:
                     await self.announce_video(video_id, video)
                 else:
                     log.logger.info(
-                        f"Not announcing video {video_id} - '{youtube.get_video_title(video)}' yet"
+                        f"Not announcing video {video_id} - '{youtube.get_video_title(video)}' yet ({self.get_video_state(video)})"
                     )
         except BaseException as e:
             log.logger.error(f"Error on announcing videos. {e}", exc_info=True)
