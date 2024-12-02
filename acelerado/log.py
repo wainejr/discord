@@ -33,4 +33,3 @@ ch.setLevel(logging.INFO)
 ch.setFormatter(CustomFormatter())
 
 logger.addHandler(ch)
-

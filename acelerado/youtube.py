@@ -1,8 +1,7 @@
-from acelerado.log import logger
-import os
-from datetime import datetime, timezone
-import pickle
 import json
+import os
+import pickle
+from datetime import datetime, timezone
 
 from dotenv import dotenv_values
 from google.auth.transport.requests import Request
@@ -10,6 +9,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+from acelerado.log import logger
 
 config = dotenv_values(".env")
 required_keys = (
@@ -166,14 +166,14 @@ def is_members_only(video: dict) -> bool:
     tags = video["snippet"]["tags"]
     return "membros" in tags
 
+
 def is_vertical(video: dict) -> bool:
     info = video.get("fileDetails", {})
-    
 
     # Check if aspect ratio or dimensions indicate a vertical video
     if "videoStreams" in info:
         streams = info["videoStreams"]
-        if(len(streams) > 0):
+        if len(streams) > 0:
             stream = streams[0]
             width = stream.get("widthPixels", 0)
             height = stream.get("heightPixels", 0)

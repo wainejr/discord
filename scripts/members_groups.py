@@ -1,12 +1,12 @@
-from acelerado.log import logger
-from acelerado import state,env
-
 import discord as disc
+from acelerado import env, state
+from acelerado.log import logger
 from discord.ext import commands
 
 intents = disc.Intents.default()
 intents.members = True
 bot = commands.Bot(command_prefix="/", intents=intents)
+
 
 @bot.event
 async def on_ready():
@@ -27,7 +27,8 @@ async def on_ready():
 
     # Find members who are in "Apoiadores" but not in "YouTube Members"
     members_only_in_apoiadores = [
-        member for member in guild.members
+        member
+        for member in guild.members
         if apoiadores_role in member.roles and youtube_members_role not in member.roles
     ]
 
@@ -36,5 +37,6 @@ async def on_ready():
         print(f"{member.name}#{member.discriminator}")
 
     await bot.close()
+
 
 bot.run(env.get_env().DISCORD_TOKEN)

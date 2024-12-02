@@ -1,6 +1,5 @@
-from pydantic import BaseModel
-
 from dotenv import dotenv_values
+from pydantic import BaseModel
 
 _config = dotenv_values(".env")
 

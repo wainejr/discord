@@ -1,5 +1,6 @@
-from acelerado import youtube
 import json
+
+from acelerado import youtube
 
 # Get through [snippet][resourceId][videoId]
 pub_video = "ndzbhZoDKN8"  # "Por que não achamos vaga pra dev baixo nível?",
