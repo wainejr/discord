@@ -63,8 +63,10 @@ class AceleradoState:
         ]
 
     def should_announce_video(self, video: dict) -> bool:
-        if youtube.is_non_listed(video) or (
-            not youtube.is_processed(video) and not youtube.is_livestream(video)
+        if (
+            youtube.is_non_listed(video)
+            or (not youtube.is_processed(video) and not youtube.is_livestream(video))
+            or youtube.is_vertical(video)
         ):
             return False
         return True
@@ -74,6 +76,7 @@ class AceleradoState:
             "non-listed": youtube.is_non_listed(video),
             "is-processed": youtube.is_processed(video),
             "is-livestream": youtube.is_livestream(video),
+            "is-vertical": youtube.is_vertical(video),
         }
 
     async def announce_video(self, v_id: str, video: dict):
@@ -85,6 +88,7 @@ class AceleradoState:
             msg = "Vídeo novo pra membros!"
         msg_send = f"@everyone {msg} **{youtube.get_video_title(video)}**\n{youtube.get_video_url(v_id)}"
         log.logger.info(f"Sending message: {msg_send}")
+        return
         await self.channel_announce.send(msg_send)
 
     async def check_expiration(self):

@@ -165,3 +165,22 @@ def is_members_only(video: dict) -> bool:
         return False
     tags = video["snippet"]["tags"]
     return "membros" in tags
+
+def is_vertical(video: dict) -> bool:
+    info = video.get("fileDetails", {})
+    
+
+    # Check if aspect ratio or dimensions indicate a vertical video
+    if "videoStreams" in info:
+        streams = info["videoStreams"]
+        if(len(streams) > 0):
+            stream = streams[0]
+            width = stream.get("widthPixels", 0)
+            height = stream.get("heightPixels", 0)
+            return height > width  # It's vertical if height > width
+        else:
+            print("unable to get is vertical 1")
+    else:
+        print("unable to get is vertical 2")
+    # If no explicit dimensions, assume not vertical
+    return False
