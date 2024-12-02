@@ -1,0 +1,98 @@
+{
+  "kind": "youtube#video",
+  "etag": "bV3q2w3mM5UAeaqro9NdYC5IHIA",
+  "id": "CHEdCfTo19A",
+  "snippet": {
+    "publishedAt": "2024-11-30T02:36:11Z",
+    "channelId": "UCNdd-FYANxk0DIvGhXVnMIg",
+    "title": "alocação em C vs. Zig #malloc #lowlevel #baixonivel #zig #dev",
+    "description": "",
+    "thumbnails": {
+      "default": {
+        "url": "https://i.ytimg.com/vi/CHEdCfTo19A/default.jpg",
+        "width": 120,
+        "height": 90
+      },
+      "medium": {
+        "url": "https://i.ytimg.com/vi/CHEdCfTo19A/mqdefault.jpg",
+        "width": 320,
+        "height": 180
+      },
+      "high": {
+        "url": "https://i.ytimg.com/vi/CHEdCfTo19A/hqdefault.jpg",
+        "width": 480,
+        "height": 360
+      },
+      "standard": {
+        "url": "https://i.ytimg.com/vi/CHEdCfTo19A/sddefault.jpg",
+        "width": 640,
+        "height": 480
+      }
+    },
+    "channelTitle": "Waine - Dev do Desempenho",
+    "categoryId": "28",
+    "liveBroadcastContent": "none",
+    "localized": {
+      "title": "alocação em C vs. Zig #malloc #lowlevel #baixonivel #zig #dev",
+      "description": ""
+    }
+  },
+  "contentDetails": {
+    "duration": "PT24S",
+    "dimension": "2d",
+    "definition": "hd",
+    "caption": "false",
+    "licensedContent": "False",
+    "contentRating": {},
+    "projection": "rectangular",
+    "hasCustomThumbnail": "False"
+  },
+  "status": {
+    "uploadStatus": "processed",
+    "privacyStatus": "public",
+    "license": "youtube",
+    "embeddable": "True",
+    "publicStatsViewable": "True",
+    "madeForKids": "False"
+  },
+  "statistics": {
+    "viewCount": "760",
+    "likeCount": "78",
+    "dislikeCount": "2",
+    "favoriteCount": "0",
+    "commentCount": "4"
+  },
+  "player": {
+    "embedHtml": "<iframe width='480' height='270' src='/www.youtube.com/embed/CHEdCfTo19A' frameborder='0' allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share' referrerpolicy='strict-origin-when-cross-origin' allowfullscreen></iframe>"
+  },
+  "recordingDetails": {},
+  "fileDetails": {
+    "fileName": "",
+    "fileType": "video",
+    "container": "mov",
+    "videoStreams": [
+      {
+        "widthPixels": 480,
+        "heightPixels": 848,
+        "frameRateFps": 29.957507082152976,
+        "aspectRatio": 0.5660377358490566,
+        "codec": "h264",
+        "bitrateBps": "1830373"
+      }
+    ],
+    "audioStreams": [
+      { "channelCount": 2, "codec": "aac", "bitrateBps": "53927" }
+    ],
+    "durationMs": "23533",
+    "bitrateBps": "1884300"
+  },
+  "processingDetails": {
+    "processingStatus": "succeeded",
+    "fileDetailsAvailability": "available",
+    "processingIssuesAvailability": "available",
+    "tagSuggestionsAvailability": "inProgress",
+    "editorSuggestionsAvailability": "inProgress",
+    "thumbnailsAvailability": "available"
+  },
+  "suggestions": {}
+}
