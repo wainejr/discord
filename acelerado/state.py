@@ -87,7 +87,6 @@ class AceleradoState:
             msg = "Vídeo novo pra membros!"
         msg_send = f"@everyone {msg} **{youtube.get_video_title(video)}**\n{youtube.get_video_url(v_id)}"
         log.logger.info(f"Sending message: {msg_send}")
-        return
         await self.channel_announce.send(msg_send)
 
     async def check_expiration(self):
