@@ -1,37 +1,41 @@
-[tool.poetry]
+[project]
 name = "acelerado"
 version = "0.1.0"
 description = ""
-authors = ["Waine Oliveira Jr <waine.oliveira.jr@gmail.com>"]
+authors = [{ name = "Waine Oliveira Jr", email = "waine.oliveira.jr@gmail.com" }]
+requires-python = "~=3.10"
 readme = "README.md"
-
 classifiers = [
-  "Development Status :: 3 - Alpha",
-  "Environment :: Console",
-  "Operating System :: OS Independent",
-  "Programming Language :: Python :: 3 :: Only",
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = [
+    "discord>=2.3.2,<3",
+    "google-api-python-client>=2.135.0,<3",
+    "python-dotenv>=1.0.1,<2",
+    "colorama>=0.4.6,<0.5",
+    "google-auth-oauthlib>=1.2.0,<2",
+    "google-auth-httplib2>=0.2.0,<0.3",
+    "pydantic>=2.8.2,<3",
 ]
 
-packages = [{include = "acelerado"}]
-
-[tool.poetry.scripts]
+[project.scripts]
 acelerado = "acelerado.__main__:main"
 
-[tool.poetry.dependencies]
-python = "^3.10"
-discord = "^2.3.2"
-google-api-python-client = "^2.135.0"
-python-dotenv = "^1.0.1"
-colorama = "^0.4.6"
-google-auth-oauthlib = "^1.2.0"
-google-auth-httplib2 = "^0.2.0"
-pydantic = "^2.8.2"
+[dependency-groups]
+dev = [
+    "black>=24.4.2,<25",
+    "isort>=5.13.2,<6",
+]
 
+[tool.hatch.build.targets.sdist]
+include = ["acelerado"]
 
-[tool.poetry.group.dev.dependencies]
-black = "^24.4.2"
-isort = "^5.13.2"
+[tool.hatch.build.targets.wheel]
+include = ["acelerado"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
