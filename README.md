@@ -8,11 +8,11 @@ O Acelerado é um bot do Discord criado para notificar sobre novos vídeos do Yo
 
 ## Rodando
 
-Para rodar, primeiro instalar as dependências utilizando [poetry](https://python-poetry.org/).
+Para rodar, primeiro instalar as dependências utilizando [uv](https://docs.astral.sh/uv/).
 
 ```
-pip install -U poetry
-poetry install
+pip install -U uv
+uv sync
 ```
 
 Após isso, copiar o arquivo `.example.env` para `.env`, alterar as variáveis de ambiente, e também o arquivo `credentials.example.json` para `credentials.json` com os valores da chave OAuth do Google.
@@ -20,7 +20,7 @@ Após isso, copiar o arquivo `.example.env` para `.env`, alterar as variáveis d
 Então rodar o bot com
 
 ```
-poetry run acelerado
+uv run acelerado
 ```
 
 Na primeira vez que rodar, vai ser necessário fazer o consentimento no navegador.
