@@ -110,8 +110,8 @@ class AceleradoState:
     async def check_members_apoiadores(self):
         guild = self.bot.get_guild(env.get_env().DISCORD_GUILD_ID)
         roles = guild.roles
-        yt_role = next(r for r in roles if r.name == "YouTube Member")
-        apoiadores_role = next(r for r in roles if r.name == "Apoiadores")
+        yt_role = next(r for r in roles if "YouTube Member" in (r.name))
+        apoiadores_role = next(r for r in roles if r.name == "Registradores")
 
         for member in yt_role.members:
             if apoiadores_role not in member.roles:

@@ -18,14 +18,14 @@ async def on_ready():
         return
 
     # Fetch roles
-    apoiadores_role = disc.utils.get(guild.roles, name="Apoiadores")
+    apoiadores_role = disc.utils.get(guild.roles, name="Registradores")
     youtube_members_role = disc.utils.get(guild.roles, name="YouTube Member")
 
     if not apoiadores_role or not youtube_members_role:
         print("Roles not found. Check role names.")
         return
 
-    # Find members who are in "Apoiadores" but not in "YouTube Members"
+    # Find members who are in "Regsitradores" but not in "YouTube Members"
     members_only_in_apoiadores = [
         member
         for member in guild.members
