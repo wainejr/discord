@@ -26,14 +26,14 @@ async def on_ready():
         return
 
     # Find members who are in "Regsitradores" but not in "YouTube Members"
-    members_only_in_apoiadores = [
+    members_only_in_registradores = [
         member
         for member in guild.members
         if apoiadores_role in member.roles and youtube_members_role not in member.roles
     ]
 
     print("Members in 'Apoiadores' but not in 'YouTube Members':")
-    for member in members_only_in_apoiadores:
+    for member in members_only_in_registradores:
         print(f"{member.name}#{member.discriminator}")
 
     await bot.close()
