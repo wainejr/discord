@@ -1,0 +1,13 @@
+[Unit]
+Description=Acelerado Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/repos/discord
+ExecStart=/bin/bash scripts/run_service.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
