@@ -115,7 +115,7 @@ class AceleradoState:
 
         for member in yt_role.members:
             if apoiadores_role not in member.roles:
-                channel = next(c for c in guild.channels if c.name == "chat-exclusivo")
+                channel = next(c for c in guild.channels if c.name == "chat-registradores")
                 if member.name == "eniaw":
                     continue
                 await member.add_roles(apoiadores_role)
