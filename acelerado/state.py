@@ -4,6 +4,12 @@ from datetime import datetime, timedelta
 from acelerado import env, log, youtube
 from discord.ext import commands
 
+logger = log.logger
+
+CHAT_MSG_ADD = "chat-registradores"
+ROLE_NAME_APOIADORES = "Registradores"
+FILENAME_PUBLISHED = pathlib.Path("published.txt")
+
 
 class AceleradoState:
     def __init__(self, bot: commands.Bot) -> None:
@@ -27,14 +33,14 @@ class AceleradoState:
 
     @property
     def videos_pubs(self) -> list[str]:
-        filename = pathlib.Path("published.txt")
+        filename = FILENAME_PUBLISHED
         if not filename.exists():
             raise FileNotFoundError(f"File {filename} not found")
         with open(filename, "r") as f:
             return f.read().split("\n")
 
     def initialize_videos_pubs(self):
-        filename = pathlib.Path("published.txt")
+        filename = FILENAME_PUBLISHED
         if not filename.exists():
             latest_videos = youtube.get_last_videos(max_videos=20)
             videos_pubs = list()
@@ -44,10 +50,10 @@ class AceleradoState:
             with open(filename, "w") as f:
                 f.write("\n".join(list(videos_pubs)))
 
-        log.logger.info(f"Videos published on start: {list(self.videos_pubs)}")
+        logger.info(f"Videos published on start: {list(self.videos_pubs)}")
 
     def add_video_published(self, v_id: str):
-        filename = pathlib.Path("published.txt")
+        filename = FILENAME_PUBLISHED
         if not filename.exists():
             raise FileNotFoundError(f"File {filename} not found")
         with open(filename, "a") as f:
@@ -86,7 +92,7 @@ class AceleradoState:
         elif youtube.is_members_only(video):
             msg = "Vídeo novo pra membros!"
         msg_send = f"@everyone {msg} **{youtube.get_video_title(video)}**\n{youtube.get_video_url(v_id)}"
-        log.logger.info(f"Sending message: {msg_send}")
+        logger.info(f"Sending message: {msg_send}")
         await self.channel_announce.send(msg_send)
 
     async def check_expiration(self):
@@ -103,7 +109,7 @@ class AceleradoState:
         await self.channel_log.send(
             f"Renew your Token! It will expire in {int(expiration_time)} seconds (at {youtube.get_token_expiration_date()})."
         )
-        log.logger.warn(
+        logger.warning(
             f"Your token will expire in {int(expiration_time)} seconds. Renew it."
         )
 
@@ -111,41 +117,43 @@ class AceleradoState:
         guild = self.bot.get_guild(env.get_env().DISCORD_GUILD_ID)
         roles = guild.roles
         yt_role = next(r for r in roles if "YouTube Member" in (r.name))
-        apoiadores_role = next(r for r in roles if r.name == "Registradores")
+        apoiadores_role = next(r for r in roles if r.name == ROLE_NAME_APOIADORES)
 
         for member in yt_role.members:
             if apoiadores_role not in member.roles:
-                channel = next(c for c in guild.channels if c.name == "chat-registradores")
                 if member.name == "eniaw":
                     continue
                 await member.add_roles(apoiadores_role)
-                await channel.send(f"Seja bem vindo aos apoiadores, <@{member.id}>!")
-                log.logger.info(f"Adding member {member} to Apoiadores!")
+                channel = next(c for c in guild.channels if c.name == CHAT_MSG_ADD)
+                await channel.send(
+                    f"Seja bem vindo aos {ROLE_NAME_APOIADORES}, <@{member.id}>!"
+                )
+                logger.info(f"Adding member {member} to {ROLE_NAME_APOIADORES}!")
 
     async def event_loop(self):
-        log.logger.info("Started event loop...")
+        logger.info("Started event loop...")
         try:
             await self.check_members_apoiadores()
         except BaseException as e:
-            log.logger.error("Error checking apoiadores", exc_info=True)
+            logger.error("Error checking apoiadores", exc_info=True)
 
         try:
             await self.check_expiration()
         except BaseException as e:
-            log.logger.error("Error cheking expiration", exc_info=True)
+            logger.error("Error cheking expiration", exc_info=True)
 
         try:
             for video_id in self.check_videos_to_pub():
                 video = youtube.get_video_info(video_id)
                 if self.should_announce_video(video):
-                    log.logger.info(
+                    logger.info(
                         f"Announcing video {video_id} - '{youtube.get_video_title(video)}'!"
                     )
                     await self.announce_video(video_id, video)
                 else:
-                    log.logger.info(
+                    logger.info(
                         f"Not announcing video {video_id} - '{youtube.get_video_title(video)}' yet ({self.get_video_state(video)})"
                     )
         except BaseException as e:
-            log.logger.error(f"Error on announcing videos. {e}", exc_info=True)
-        log.logger.info("Finished event loop!")
+            logger.error(f"Error on announcing videos. {e}", exc_info=True)
+        logger.info("Finished event loop!")
