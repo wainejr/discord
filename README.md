@@ -47,6 +47,7 @@ uv sync
    | `YOUTUBE_API_KEY`               | Chave de API do YouTube (fallback sem OAuth)   |
    | `ACELERADO_TICK_SECONDS`        | (opcional) Período do loop, default `300`      |
    | `ACELERADO_LOG_LEVEL`           | (opcional) `DEBUG`/`INFO`/`WARNING`/…           |
+   | `ACELERADO_AUTO_THREAD`         | (opcional) Auto-cria thread no anúncio de vídeo, default `true` |
 
 2. **Credenciais OAuth do Google** — copie o exemplo e substitua pelos valores da sua app:
 
@@ -61,6 +62,7 @@ uv sync
 | Comando | Descrição |
 |---------|-----------|
 | `/links` | Lista os canais/redes oficiais (resposta ephemeral, só você vê). |
+| `/sync` | (admin) Força a sincronização de cargos `Registradores` na hora — útil quando alguém acabou de virar membro pago no YouTube e não quer esperar o tick. |
 
 Todos os slash commands são **guild-scoped** — registrados no servidor configurado em `DISCORD_GUILD_ID`, propagam instantaneamente. Para adicionar um novo, ver `acelerado/slash.py`.
 

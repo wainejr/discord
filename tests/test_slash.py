@@ -65,3 +65,97 @@ def test_links_dict_uses_https_urls():
     """All links in the embed point to HTTPS — guard against accidental http://."""
     for name, url in LINKS.items():
         assert url.startswith("https://"), f"{name} has non-https URL: {url}"
+
+
+# ---------------------------------------------------------------------------
+# /sync admin command
+# ---------------------------------------------------------------------------
+
+
+def test_register_sync_command_guild_scoped():
+    tree = _build_tree()
+    guild = discord.Object(id=1)
+    register_commands(tree, guild=guild)
+
+    cmd = tree.get_command("sync", guild=guild)
+    assert cmd is not None
+    assert cmd.name == "sync"
+    # Admin permission gate is set via the decorator.
+    assert cmd.default_permissions is not None
+    assert cmd.default_permissions.administrator is True
+
+
+def _make_sync_interaction(bot):
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.client = bot
+    interaction.response = MagicMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+async def test_sync_command_reports_count_when_added(monkeypatch):
+    from acelerado import bot as bot_mod
+    from acelerado.slash import cmd_sync
+
+    fake_bot = MagicMock(spec=bot_mod.AceleradoBot)
+    fake_bot.state_handler = MagicMock()
+    fake_bot.state_handler.check_members_apoiadores = AsyncMock(return_value=3)
+
+    interaction = _make_sync_interaction(fake_bot)
+    await cmd_sync.callback(interaction)
+
+    interaction.response.defer.assert_awaited_once()
+    interaction.followup.send.assert_awaited_once()
+    msg = interaction.followup.send.await_args.args[0]
+    assert "3" in msg
+    assert "Sync concluído" in msg
+
+
+async def test_sync_command_zero_added_message():
+    from acelerado import bot as bot_mod
+    from acelerado.slash import cmd_sync
+
+    fake_bot = MagicMock(spec=bot_mod.AceleradoBot)
+    fake_bot.state_handler = MagicMock()
+    fake_bot.state_handler.check_members_apoiadores = AsyncMock(return_value=0)
+
+    interaction = _make_sync_interaction(fake_bot)
+    await cmd_sync.callback(interaction)
+
+    msg = interaction.followup.send.await_args.args[0]
+    assert "nenhum membro pendente" in msg.lower()
+
+
+async def test_sync_command_reports_failure():
+    from acelerado import bot as bot_mod
+    from acelerado.slash import cmd_sync
+
+    fake_bot = MagicMock(spec=bot_mod.AceleradoBot)
+    fake_bot.state_handler = MagicMock()
+    fake_bot.state_handler.check_members_apoiadores = AsyncMock(side_effect=RuntimeError("kaboom"))
+    fake_bot.state_handler.report_error = AsyncMock()
+
+    interaction = _make_sync_interaction(fake_bot)
+    await cmd_sync.callback(interaction)
+
+    fake_bot.state_handler.report_error.assert_awaited_once()
+    msg = interaction.followup.send.await_args.args[0]
+    assert "❌" in msg
+    assert "RuntimeError" in msg
+
+
+async def test_sync_command_handles_uninitialized_bot():
+    """If the slash fires before setup_hook finishes, respond gracefully."""
+    from acelerado.slash import cmd_sync
+
+    # Plain Mock — not an AceleradoBot instance, so isinstance returns False.
+    fake_bot = MagicMock()
+    interaction = _make_sync_interaction(fake_bot)
+    await cmd_sync.callback(interaction)
+
+    interaction.response.send_message.assert_awaited_once()
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "ainda não" in msg.lower()

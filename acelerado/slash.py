@@ -44,6 +44,43 @@ async def cmd_links(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+@app_commands.command(
+    name="sync",
+    description="(admin) Força a sincronização de membros agora",
+)
+@app_commands.default_permissions(administrator=True)
+async def cmd_sync(interaction: discord.Interaction) -> None:
+    # Local import to avoid a circular dep with bot.py at module load.
+    from acelerado.bot import AceleradoBot
+
+    bot = interaction.client
+    if not isinstance(bot, AceleradoBot) or bot.state_handler is None:
+        await interaction.response.send_message(
+            "⚠️ Bot ainda não terminou o setup; tente novamente em alguns segundos.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        added = await bot.state_handler.check_members_apoiadores()
+    except Exception as exc:
+        await bot.state_handler.report_error("slash:sync", exc)
+        await interaction.followup.send(
+            f"❌ Sync falhou: `{type(exc).__name__}: {exc}`",
+            ephemeral=True,
+        )
+        return
+
+    if added == 0:
+        msg = "✅ Sync concluído — nenhum membro pendente."
+    elif added == 1:
+        msg = "✅ Sync concluído — 1 membro adicionado a Registradores."
+    else:
+        msg = f"✅ Sync concluído — {added} membros adicionados a Registradores."
+    await interaction.followup.send(msg, ephemeral=True)
+
+
 def register_commands(
     tree: app_commands.CommandTree,
     guild: discord.abc.Snowflake | None = None,
@@ -54,3 +91,4 @@ def register_commands(
     great for dev). Pass ``None`` to register globally (~1h propagation).
     """
     tree.add_command(cmd_links, guild=guild)
+    tree.add_command(cmd_sync, guild=guild)

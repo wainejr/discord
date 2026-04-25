@@ -17,6 +17,9 @@ class EnvCfg(BaseSettings):
     # this in dev lets you exercise the loop faster.
     ACELERADO_TICK_SECONDS: int = 300
 
+    # Whether new-video announcements automatically open a discussion thread.
+    ACELERADO_AUTO_THREAD: bool = True
+
 
 @lru_cache(maxsize=1)
 def get_env() -> EnvCfg:
