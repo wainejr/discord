@@ -20,6 +20,10 @@ class EnvCfg(BaseSettings):
     # Whether new-video announcements automatically open a discussion thread.
     ACELERADO_AUTO_THREAD: bool = True
 
+    # Channel ID for ``on_member_join`` welcome messages. If 0/unset, the bot
+    # tries to DM the new member (which silently no-ops if DMs are blocked).
+    DISCORD_WELCOME_CHANNEL_ID: int = 0
+
 
 @lru_cache(maxsize=1)
 def get_env() -> EnvCfg:

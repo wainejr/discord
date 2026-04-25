@@ -1,0 +1,14 @@
+# Saudações pra novos membros — uma por linha.
+# Linhas começando com # são comentários (ignoradas).
+# Placeholders: {member} (mention), {guild}, {channel_youtube}.
+
+Bem-vindo(a), {member}! Já dá um `malloc` no canal de apresentação. 🚀
+{member} chegou em {guild} — esperamos que goste de assembly tanto quanto a gente.
+Olá {member}! Aqui a gente discute desempenho, baixo nível e cafezinho. ☕
+{member} entrou! Spoiler: o segredo é cache hit.
+Bem-vindo(a), {member}. Recomendo passar primeiro pelas regras antes de gastar ciclos.
+{member} chegou — espero que tenha trazido um perfil de chama. 🔥
+Salve {member}! Se quiser saber o que rola por aqui, dá uma olhada no canal: {channel_youtube}
+{member} ativado(a). Cuidado com cache misses no chat.
+Bem-vindo(a) ao {guild}, {member}! Aqui a gente otimiza loops e relacionamentos.
+{member}, mais um(a) na gangue do baixo nível. Sente em qualquer registrador livre.

@@ -48,6 +48,7 @@ uv sync
    | `ACELERADO_TICK_SECONDS`        | (opcional) Período do loop, default `300`      |
    | `ACELERADO_LOG_LEVEL`           | (opcional) `DEBUG`/`INFO`/`WARNING`/…           |
    | `ACELERADO_AUTO_THREAD`         | (opcional) Auto-cria thread no anúncio de vídeo, default `true` |
+   | `DISCORD_WELCOME_CHANNEL_ID`    | (opcional) Canal pra mensagem de boas-vindas. Se `0`/vazio, tenta DM. |
 
 2. **Credenciais OAuth do Google** — copie o exemplo e substitua pelos valores da sua app:
 
