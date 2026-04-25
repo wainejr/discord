@@ -47,9 +47,23 @@ class UpdateResult:
         return self.head[:7] if self.head else ""
 
 
-def _run(cmd: list[str], cwd: Path) -> tuple[int, str, str]:
-    """Thin wrapper over subprocess.run that always captures stdout/stderr."""
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(cwd))
+_DEFAULT_TIMEOUT = 60.0  # seconds
+
+
+def _run(cmd: list[str], cwd: Path, timeout: float = _DEFAULT_TIMEOUT) -> tuple[int, str, str]:
+    """Thin wrapper over subprocess.run that always captures stdout/stderr.
+
+    A timeout prevents a hung ``git fetch`` (network blip, creds prompt) from
+    pegging the bot — we'd rather fail fast and report ``error``. On timeout
+    we synthesize ``returncode=124`` (the convention from coreutils
+    ``timeout(1)``) so callers can tell it apart from a normal non-zero exit.
+    """
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, cwd=str(cwd), timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timed out after {timeout:.0f}s"
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
 
