@@ -32,6 +32,15 @@ class EnvCfg(BaseSettings):
     # YouTube lives. The reminder fires once per video.
     ACELERADO_LIVE_REMINDER_MINUTES: int = 15
 
+    # Channel ID where weekly summary drafts await human approval before
+    # being posted publicly. Same channel works for stale-apoiadores reports
+    # if you don't want a separate one.
+    DISCORD_REVIEW_CHANNEL_ID: int = 0
+
+    # Whitelist of Discord usernames (NOT IDs — for human-edit convenience)
+    # that are exempt from the "stale apoiadores" report. Comma-separated.
+    ACELERADO_APOIADORES_WHITELIST: str = "eniaw"
+
 
 @lru_cache(maxsize=1)
 def get_env() -> EnvCfg:
