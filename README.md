@@ -1,77 +1,232 @@
-# Discord Bot - Acelerado
+# Discord Bot — Acelerado
 
-Este projeto é aberto para toda a comunidade do canal [Waine - Dev do Desempenho](https://www.youtube.com/@waine_jr).
+Projeto aberto para toda a comunidade do canal [Waine — Dev do Desempenho](https://www.youtube.com/@waine_jr).
 
 ## Descrição
 
-O Acelerado é um bot do Discord criado para notificar sobre novos vídeos do YouTube diretamente no servidor da comunidade. Ele foi desenvolvido utilizando `discord.py`
+O **Acelerado** é um bot de Discord que:
 
-## Rodando
+- anuncia novos vídeos e lives do YouTube no canal da comunidade;
+- sincroniza membros do YouTube com o cargo `Registradores` no Discord;
+- avisa quando o token OAuth do YouTube está prestes a expirar;
+- oferece uma CLI (`typer`) com subcomandos utilitários e uma TUI (`textual`) para monitoramento ao vivo.
 
-Para rodar, primeiro instalar as dependências utilizando [uv](https://docs.astral.sh/uv/).
+Construído com `discord.py` 2.x, `google-api-python-client`, `pydantic-settings`, `typer`, `textual` e `rich`.
 
-```
+## Pré-requisitos
+
+- Python **3.11+**
+- [`uv`](https://docs.astral.sh/uv/) para gerenciamento de dependências
+- Uma aplicação de Bot no [Discord Developer Portal](https://discord.com/developers/applications) (com o intent de **Server Members** ligado)
+- Credenciais OAuth 2.0 do Google Cloud com a **YouTube Data API v3** habilitada
+
+## Instalação
+
+```sh
 pip install -U uv
 uv sync
 ```
 
-Após isso, copiar o arquivo `.example.env` para `.env`, alterar as variáveis de ambiente, e também o arquivo `credentials.example.json` para `credentials.json` com os valores da chave OAuth do Google.
+## Configuração
 
-Então rodar o bot com
+1. **Variáveis de ambiente** — copie o exemplo e preencha:
 
-```
-uv run acelerado
-```
-
-Na primeira vez que rodar, vai ser necessário fazer o consentimento no navegador.
-
-## Como Contribuir
-
-Todos são bem-vindos para contribuir com o projeto. Siga as instruções abaixo para começar:
-
-[Documentação do Discord.py](https://discordpy.readthedocs.io/en/stable/search.html?q=choice)
-
-1. Faça um fork do repositório.
-2. Clone o seu fork:
    ```sh
-   git clone https://github.com/seu-usuario/discord-bot.git
+   cp .example.env .env
    ```
 
-3. Crie um branch para sua feature ou correção de bug:
+   Variáveis obrigatórias (validadas por `pydantic-settings`):
+
+   | Variável                        | Descrição                                      |
+   |---------------------------------|------------------------------------------------|
+   | `DISCORD_TOKEN`                 | Token do bot no Discord                        |
+   | `DISCORD_GUILD_ID`              | ID do servidor (guild)                         |
+   | `DISCORD_ANNOUNCE_CHANNEL_ID`   | Canal onde novos vídeos serão anunciados       |
+   | `DISCORD_LOG_CHANNEL_ID`        | Canal para avisos internos (ex: token expira)  |
+   | `YOUTUBE_CHANNEL_ID`            | ID do canal do YouTube a monitorar             |
+   | `YOUTUBE_API_KEY`               | Chave de API do YouTube (fallback sem OAuth)   |
+   | `ACELERADO_TICK_SECONDS`        | (opcional) Período do loop, default `300`      |
+   | `ACELERADO_LOG_LEVEL`           | (opcional) `DEBUG`/`INFO`/`WARNING`/…           |
+
+2. **Credenciais OAuth do Google** — copie o exemplo e substitua pelos valores da sua app:
+
+   ```sh
+   cp credentials.example.json credentials.json
+   ```
+
+   Na primeira execução que precisar da API do YouTube (por ex. `acelerado run` ou `acelerado refresh-token`), o navegador abrirá para consentimento e o token será salvo em `token.pickle`.
+
+## Uso — CLI
+
+Toda a funcionalidade é exposta por um único entrypoint `acelerado`, montado com `typer`:
+
 ```sh
-  git checkout -b minha-feature
+uv run acelerado --help
 ```
 
-Faça suas alterações e adicione commits:
-```sh
-  git add .
-  git commit -m "Minha nova feature"
-```
-Envie suas alterações:
+| Subcomando                    | O que faz                                                               |
+|-------------------------------|-------------------------------------------------------------------------|
+| `acelerado run`               | Inicia o bot (processo longo; é o comando do systemd).                  |
+| `acelerado status`            | Mostra expiração do token e contagem de vídeos já anunciados.           |
+| `acelerado monitor`           | Abre a TUI (`textual`) com contagem regressiva do token ao vivo e lista de anúncios recentes. |
+| `acelerado audit-members`     | Lista membros com o cargo `Registradores` que perderam o cargo do YouTube (tabela `rich`). |
+| `acelerado refresh-token`     | Faz backup de `token.pickle` e refaz o fluxo OAuth.                     |
+
+### Logs
+
+O logger padrão é `INFO`. Pra aumentar verbosidade:
 
 ```sh
-  git push origin minha-feature
+uv run acelerado --log-level DEBUG run
+# ou via env var
+ACELERADO_LOG_LEVEL=DEBUG uv run acelerado run
 ```
-Abra um Pull Request no repositório original.
 
-## Relatar Problemas
+Em `DEBUG` os logs do `discord.py`, `googleapiclient` e `urllib3` também são liberados; em níveis superiores ficam silenciados em `WARNING` pra reduzir ruído.
 
-Caso encontre algum bug, por favor, abra uma issue detalhando o máximo possível o erro encontrado. Isso nos ajudará a identificar e corrigir o problema mais rapidamente.
+### TUI (monitor)
 
-## Links Importantes
+```sh
+uv run acelerado monitor
+```
 
-[Canal do YouTube](https://www.youtube.com/@waine_jr)
+Teclas: `q` pra sair, `r` pra recarregar manualmente. A tela é atualizada a cada 1s, mostrando a expiração do token e os últimos 15 vídeos em `published.txt`.
 
-[Servidor do Discord](https://discord.gg/RHuhFcfzyV)
+## Deploy
 
-[@waine_jr no Instagram](https://instagram.com/waine_jr)
+O bot é "à prova de falhas": cada passo do tick é isolado em try/except, falhas são logadas localmente E reportadas no canal de log do Discord (com cooldown de 10 min pra não spammar). Loops com erro são reiniciados automaticamente. Em caso de crash do processo, basta restartar.
+
+Recomendação: rode dentro de um `tmux` (ou `screen`) — assim sobrevive ao logout e dá pra reanexar a sessão.
+
+```sh
+tmux new -s acelerado
+uv run acelerado run
+# Ctrl+B, D pra desanexar
+# tmux attach -t acelerado pra reanexar depois
+```
+
+Pra reiniciar automaticamente em caso de crash, um one-liner também resolve:
+
+```sh
+while true; do uv run acelerado run; sleep 5; done
+```
+
+Ou, dentro do tmux:
+
+```sh
+tmux new -s acelerado 'while true; do uv run acelerado run; sleep 5; done'
+```
+
+Pra copiar um `token.pickle` renovado pra uma máquina remota (ex.: Raspberry Pi), há o utilitário `scripts/send_token.sh` (ajuste o host `home_rasp` pro seu `~/.ssh/config`).
+
+## Testes
+
+A suíte roda totalmente **offline** — nenhum request ao Discord ou ao YouTube é feito. O cliente do Google é substituído por um `MagicMock` encadeável e o Discord é representado por `MagicMock`/`AsyncMock` nos pontos que `AceleradoState` consome.
+
+```sh
+uv run pytest             # roda tudo (58 testes)
+uv run pytest -q          # saída concisa
+uv run pytest tests/test_state.py -k announce   # filtro por nome
+```
+
+Cobertura atual inclui:
+
+- **`test_youtube.py`** — helpers puros (`is_*`, `get_video_*`) e chamadas mockadas da API.
+- **`test_state.py`** — `AceleradoState`: filtros de anúncio, `published.txt`, mensagens (`@everyone`, livestream, membros), rate-limit de aviso de expiração, sync de cargos (incluindo o caso especial de ignorar o user `eniaw`).
+- **`test_env.py`** — carregamento e validação de `pydantic-settings`.
+- **`test_log.py`** — idempotência de `setup_logging` e gating de níveis.
+- **`test_cli.py`** — smoke tests com `typer.testing.CliRunner`.
+
+Fixtures em `tests/conftest.py` isolam cada teste em `tmp_path` e limpam os caches `@lru_cache` entre runs.
+
+## Qualidade de código
+
+```sh
+uv run ruff check .                    # lint
+uv run ruff format .                   # formatação
+uv run mypy acelerado                  # type check
+uv run pytest --cov                    # com coverage
+```
+
+A pipeline de CI (`.github/workflows/ci.yml`) roda `ruff check`, `ruff format --check`, `mypy` e `pytest --cov` em pushes/PRs pra `main`. Quebrou alguma checagem? O CI te avisa antes do merge.
+
+Configuração em `pyproject.toml`:
+- Ruff: linha 100, target `py311`, regras `E,F,I,UP,B`, exclui `examples/`.
+- Mypy: pragma — `ignore_missing_imports`, `check_untyped_defs`, `warn_unused_ignores`, plugin `pydantic.mypy`.
+- Coverage: branch coverage habilitada, `__main__.py` excluído.
+
+## Estrutura do projeto
+
+```
+acelerado/
+  __main__.py     # wrapper fino: python -m acelerado -> cli.app
+  cli.py          # typer app + callback global (--log-level)
+  bot.py          # AceleradoBot (commands.Bot) + setup_hook + tasks.loop
+  state.py        # AceleradoState — orquestra cada tick de 5 min
+  youtube.py      # OAuth + YouTube Data API (clientes com @lru_cache)
+  tui.py          # MonitorApp em textual
+  env.py          # configuração via pydantic-settings
+  log.py          # setup_logging() com RichHandler
+tests/            # suíte offline com pytest + pytest-asyncio
+scripts/
+  send_token.sh             # envia token.pickle pra host remoto (SCP)
+.github/workflows/
+  ci.yml                    # ruff + mypy + pytest em PRs/pushes
+examples/         # payloads de exemplo da API do YouTube
+published.txt     # IDs de vídeos já anunciados (não apagar em produção!)
+credentials.json  # segredos OAuth do Google (gitignored)
+token.pickle      # token OAuth em cache (gitignored)
+.env              # configuração (ver .example.env)
+```
+
+## Como contribuir
+
+1. Faça um fork deste repositório.
+2. Clone o seu fork:
+
+   ```sh
+   git clone https://github.com/seu-usuario/discord.git
+   ```
+
+3. Crie uma branch:
+
+   ```sh
+   git checkout -b minha-feature
+   ```
+
+4. Faça mudanças, rode lint + testes:
+
+   ```sh
+   uv run ruff check . && uv run ruff format . && uv run pytest
+   ```
+
+5. Commit e push:
+
+   ```sh
+   git commit -am "Minha nova feature"
+   git push origin minha-feature
+   ```
+
+6. Abra um Pull Request no repositório original.
+
+Consulte a [documentação do discord.py](https://discordpy.readthedocs.io/en/stable/) e do [typer](https://typer.tiangolo.com/) quando for mexer em comandos novos. Para novos testes, siga o padrão em `tests/conftest.py` — nada de chamadas reais à rede.
+
+## Relatar problemas
+
+Se encontrar algum bug, abra uma issue detalhando o erro (stack trace, passos pra reproduzir, nível de log). Rodar com `--log-level DEBUG` ajuda bastante no diagnóstico.
+
+## Links importantes
+
+- [Canal do YouTube](https://www.youtube.com/@waine_jr)
+- [Servidor do Discord](https://discord.gg/RHuhFcfzyV)
+- [@waine_jr no Instagram](https://instagram.com/waine_jr)
 
 ## Licença
 
-Este projeto é licenciado sob a [MIT License](./LICENSE).
+Projeto licenciado sob a [MIT License](./LICENSE).
 
 ## Contato
 
-Para dúvidas ou mais informações, entre em contato pelo servidor do Discord, comente no canal do YouTube.
+Pra dúvidas ou mais informações, fale no servidor do Discord ou comente no canal do YouTube.
 
-Obrigado por fazer parte da nossa comunidade!
+Obrigado por fazer parte da comunidade!

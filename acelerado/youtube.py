@@ -1,7 +1,7 @@
 import json
 import logging
 import pickle
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -37,34 +37,36 @@ def get_creds() -> Credentials:
     return creds
 
 
-def get_authenticated_youtube_token():
-    """YouTube client via OAuth token — sees members-only and unpublished videos."""
-    return build("youtube", "v3", credentials=get_creds(), cache_discovery=False)
-
-
-def get_authenticated_youtube_key():
-    """YouTube client via API key — no access to members-only/private videos, but never expires."""
-    return build("youtube", "v3", developerKey=get_env().YOUTUBE_API_KEY, cache_discovery=False)
-
-
 def get_token_expiration_date() -> datetime | None:
+    """Return the cached token's expiry as a timezone-aware UTC datetime.
+
+    google-auth stores ``Credentials.expiry`` as a naive UTC datetime; we
+    normalize to aware UTC so downstream arithmetic doesn't silently drift
+    on non-UTC hosts.
+    """
     if not TOKEN_PATH.exists():
         return None
     with TOKEN_PATH.open("rb") as token:
         cred_json = pickle.load(token)
-    return Credentials.from_authorized_user_info(json.loads(cred_json), SCOPES).expiry
+    expiry = Credentials.from_authorized_user_info(json.loads(cred_json), SCOPES).expiry
+    if expiry is None:
+        return None
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=UTC)
+    return expiry
 
 
 def get_token_time_to_expire() -> float | None:
     expire = get_token_expiration_date()
     if expire is None:
         return None
-    return (expire - datetime.now()).total_seconds()
+    return (expire - datetime.now(UTC)).total_seconds()
 
 
 @lru_cache(maxsize=1)
 def _youtube():
-    return get_authenticated_youtube_token()
+    """OAuth-backed YouTube client — sees members-only and unpublished videos."""
+    return build("youtube", "v3", credentials=get_creds(), cache_discovery=False)
 
 
 @lru_cache(maxsize=1)
@@ -87,10 +89,6 @@ def get_last_videos(max_videos: int = 20) -> list[dict]:
         .execute()
     )
     return response["items"]
-
-
-def get_latest_video() -> dict:
-    return get_last_videos(max_videos=1)[0]
 
 
 def get_video_info(video_id: str) -> dict:

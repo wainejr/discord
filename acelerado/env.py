@@ -13,6 +13,10 @@ class EnvCfg(BaseSettings):
     YOUTUBE_API_KEY: str
     DISCORD_GUILD_ID: int
 
+    # How often the periodic job runs. 300s is the production default; dropping
+    # this in dev lets you exercise the loop faster.
+    ACELERADO_TICK_SECONDS: int = 300
+
 
 @lru_cache(maxsize=1)
 def get_env() -> EnvCfg:

@@ -28,7 +28,45 @@ acelerado = "acelerado.cli:app"
 [dependency-groups]
 dev = [
     "ruff>=0.6",
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5",
+    "mypy>=1.11",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore:'audioop' is deprecated:DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["acelerado"]
+branch = true
+omit = ["acelerado/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["acelerado"]
+plugins = ["pydantic.mypy"]
+# Pragmatic posture: catch real bugs, don't drown in third-party stub gaps.
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+strict_equality = true
 
 [tool.hatch.build.targets.sdist]
 include = ["acelerado"]
@@ -39,6 +77,7 @@ include = ["acelerado"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["examples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

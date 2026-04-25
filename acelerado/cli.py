@@ -43,7 +43,13 @@ def run() -> None:
     """Start the Discord bot (long-running)."""
     from acelerado.bot import run_bot
 
-    run_bot()
+    try:
+        run_bot()
+    except KeyboardInterrupt:
+        logger.info("Bot shutdown requested (Ctrl+C)")
+    except Exception:
+        logger.exception("Bot crashed during startup or runtime")
+        raise typer.Exit(code=1) from None
 
 
 @app.command(name="audit-members")
@@ -114,9 +120,9 @@ def status() -> None:
 
     expiry = youtube.get_token_expiration_date()
     seconds = youtube.get_token_time_to_expire()
-    if expiry is None:
+    if expiry is None or seconds is None:
         token_line = "[yellow]No cached token[/]"
-    elif seconds is not None and seconds <= 0:
+    elif seconds <= 0:
         token_line = f"[red bold]EXPIRED[/] at {expiry:%Y-%m-%d %H:%M:%S}"
     else:
         days = int(seconds // 86400)

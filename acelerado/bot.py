@@ -17,6 +17,9 @@ class AceleradoBot(commands.Bot):
         self.state_handler: AceleradoState | None = None
 
     async def setup_hook(self) -> None:
+        # `tasks.loop` locks its interval at decorator-time; bump it to the
+        # configured value before the first tick.
+        self.event_loop_task.change_interval(seconds=get_env().ACELERADO_TICK_SECONDS)
         self.event_loop_task.start()
 
     async def on_ready(self) -> None:
@@ -29,18 +32,60 @@ class AceleradoBot(commands.Bot):
         )
         logger.info("Updated presence!")
 
+    async def on_error(self, event_method: str, /, *args, **kwargs) -> None:
+        """Replace the default stderr dump with a proper log line.
+
+        Gateway-level errors (anything raised inside an event handler that
+        we didn't catch ourselves) land here. We log with traceback and,
+        if the state handler is up, report to the Discord log channel.
+        """
+        import sys
+
+        exc = sys.exc_info()[1]
+        logger.exception(f"Unhandled error in event {event_method!r}")
+        if self.state_handler is not None and exc is not None:
+            try:
+                await self.state_handler.report_error(f"event:{event_method}", exc)
+            except Exception:
+                logger.exception("report_error itself failed")
+
     @tasks.loop(seconds=300)
     async def event_loop_task(self) -> None:
+        # AceleradoState.event_loop already swallows per-step errors and
+        # reports them. Anything escaping here is a bug in the glue itself
+        # — we log + report but never re-raise, so the tasks.Loop keeps
+        # firing on schedule.
         try:
+            if self.state_handler is None:
+                logger.error("event_loop_task fired with no state_handler; skipping")
+                return
             await self.state_handler.event_loop()
-        except Exception:
-            logger.exception("Error on event loop")
+        except Exception as exc:
+            logger.exception("Unexpected crash in event_loop_task")
+            if self.state_handler is not None:
+                try:
+                    await self.state_handler.report_error("event_loop_task", exc)
+                except Exception:
+                    logger.exception("report_error itself failed")
 
     @event_loop_task.before_loop
     async def _before_event_loop(self) -> None:
         await self.wait_until_ready()
         if self.state_handler is None:
             self.state_handler = AceleradoState(self)
+
+    @event_loop_task.error
+    async def _event_loop_error(self, exc: BaseException) -> None:
+        # Belt-and-suspenders: the body above already catches Exception,
+        # but discord.py stops the loop on any escaping BaseException.
+        # Log, try to report, then restart so we don't silently die.
+        logger.exception("event_loop_task errored out — restarting", exc_info=exc)
+        if self.state_handler is not None and isinstance(exc, Exception):
+            try:
+                await self.state_handler.report_error("event_loop_task:fatal", exc)
+            except Exception:
+                logger.exception("report_error itself failed")
+        self.event_loop_task.restart()
 
 
 def run_bot() -> None:
