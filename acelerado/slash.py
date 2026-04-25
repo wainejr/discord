@@ -201,7 +201,11 @@ def register_commands(
     Pass ``guild=`` to scope commands to a single guild (instant sync,
     great for dev). Pass ``None`` to register globally (~1h propagation).
     """
+    from acelerado.review import cmd_preview_stale, cmd_preview_summary
+
     tree.add_command(cmd_links, guild=guild)
     tree.add_command(cmd_sync, guild=guild)
     tree.add_command(cmd_update, guild=guild)
     tree.add_command(cmd_report, guild=guild)
+    tree.add_command(cmd_preview_summary, guild=guild)
+    tree.add_command(cmd_preview_stale, guild=guild)
