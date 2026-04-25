@@ -1,35 +1,59 @@
+"""Logging configuration.
+
+Import-time side effects are avoided on purpose: modules should use
+``logging.getLogger(__name__)`` and trust ``setup_logging`` to be called
+once from the entrypoint (the typer root callback).
+"""
+
 import logging
+from typing import Final
 
-from colorama import Fore
+from rich.logging import RichHandler
 
-__all__ = ["logger"]
+_CONFIGURED: Final = "_acelerado_logging_configured"
 
-
-class CustomFormatter(logging.Formatter):
-    format = "[%(asctime)s] [%(levelname)s] - %(name)s - %(message)s (%(filename)s:%(lineno)d)"
-
-    FORMATS = {
-        logging.DEBUG: f"{Fore.LIGHTMAGENTA_EX}{format}{Fore.RESET}",
-        logging.INFO: f"{Fore.WHITE}{format}{Fore.RESET}",
-        logging.WARNING: f"{Fore.YELLOW}{format}{Fore.RESET}",
-        logging.ERROR: f"{Fore.LIGHTRED_EX}{format}{Fore.RESET}",
-        logging.CRITICAL: f"{Fore.RED}{format}{Fore.RESET}",
-    }
-
-    def format(self, record):
-        log_fmt = self.FORMATS.get(record.levelno)
-        formatter = logging.Formatter(log_fmt)
-        return formatter.format(record)
+# Third-party loggers we intentionally quiet unless the user opts into debug.
+_NOISY_LOGGERS: Final = (
+    "discord",
+    "discord.gateway",
+    "discord.http",
+    "googleapiclient",
+    "google_auth_httplib2",
+    "urllib3",
+)
 
 
-# create logger with 'spam_application'
-logger = logging.getLogger("acelerado")
-logger.setLevel(logging.INFO)
+def setup_logging(level: str | int = "INFO") -> None:
+    """Configure root logging once. Safe to call multiple times."""
+    if isinstance(level, str):
+        level = level.upper()
+    numeric_level = logging.getLevelName(level) if isinstance(level, str) else level
+    if not isinstance(numeric_level, int):
+        raise ValueError(f"Invalid log level: {level!r}")
 
-# create console handler with a higher log level
-ch = logging.StreamHandler()
-ch.setLevel(logging.INFO)
+    root = logging.getLogger()
 
-ch.setFormatter(CustomFormatter())
+    if getattr(root, _CONFIGURED, False):
+        root.setLevel(min(numeric_level, logging.WARNING))
+        logging.getLogger("acelerado").setLevel(numeric_level)
+        return
 
-logger.addHandler(ch)
+    handler = RichHandler(
+        rich_tracebacks=True,
+        tracebacks_show_locals=False,
+        show_path=False,
+        markup=False,
+        log_time_format="[%X]",
+    )
+    handler.setFormatter(logging.Formatter("%(name)s — %(message)s"))
+
+    root.addHandler(handler)
+    root.setLevel(logging.WARNING)
+    logging.getLogger("acelerado").setLevel(numeric_level)
+
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(
+            logging.DEBUG if numeric_level <= logging.DEBUG else logging.WARNING
+        )
+
+    setattr(root, _CONFIGURED, True)

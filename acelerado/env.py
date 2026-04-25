@@ -1,23 +1,11 @@
-from dotenv import dotenv_values
-from pydantic import BaseModel
+from functools import lru_cache
 
-_config = dotenv_values(".env")
-
-REQUIRED_KEYS = (
-    "DISCORD_ANNOUNCE_CHANNEL_ID",
-    "DISCORD_LOG_CHANNEL_ID",
-    "DISCORD_TOKEN",
-    "YOUTUBE_CHANNEL_ID",
-    "YOUTUBE_API_KEY",
-    "DISCORD_GUILD_ID",
-)
-if not all(s in _config for s in REQUIRED_KEYS):
-    raise KeyError(
-        f"Not all required keys in .env. Keys found {list(_config.keys())}. Keys required {REQUIRED_KEYS}"
-    )
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class EnvCfg(BaseModel):
+class EnvCfg(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     DISCORD_ANNOUNCE_CHANNEL_ID: int
     DISCORD_LOG_CHANNEL_ID: int
     DISCORD_TOKEN: str
@@ -26,13 +14,6 @@ class EnvCfg(BaseModel):
     DISCORD_GUILD_ID: int
 
 
+@lru_cache(maxsize=1)
 def get_env() -> EnvCfg:
-    global _config
-    return EnvCfg(
-        DISCORD_ANNOUNCE_CHANNEL_ID=_config["DISCORD_ANNOUNCE_CHANNEL_ID"],
-        DISCORD_LOG_CHANNEL_ID=_config["DISCORD_LOG_CHANNEL_ID"],
-        DISCORD_TOKEN=_config["DISCORD_TOKEN"],
-        YOUTUBE_CHANNEL_ID=_config["YOUTUBE_CHANNEL_ID"],
-        YOUTUBE_API_KEY=_config["YOUTUBE_API_KEY"],
-        DISCORD_GUILD_ID=_config["DISCORD_GUILD_ID"],
-    )
+    return EnvCfg()

@@ -1,33 +1,33 @@
 [project]
 name = "acelerado"
-version = "0.1.0"
-description = ""
+version = "0.2.0"
+description = "Discord bot for the Waine - Dev do Desempenho YouTube community"
 authors = [{ name = "Waine Oliveira Jr", email = "waine.oliveira.jr@gmail.com" }]
-requires-python = "~=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
 ]
 dependencies = [
-    "discord>=2.3.2,<3",
-    "google-api-python-client>=2.135.0,<3",
-    "python-dotenv>=1.0.1,<2",
-    "colorama>=0.4.6,<0.5",
-    "google-auth-oauthlib>=1.2.0,<2",
-    "google-auth-httplib2>=0.2.0,<0.3",
-    "pydantic>=2.8.2,<3",
+    "discord.py>=2.4",
+    "google-api-python-client>=2.150",
+    "google-auth-oauthlib>=1.2",
+    "google-auth-httplib2>=0.2",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "typer>=0.12",
+    "textual>=0.80",
 ]
 
 [project.scripts]
-acelerado = "acelerado.__main__:main"
+acelerado = "acelerado.cli:app"
 
 [dependency-groups]
 dev = [
-    "black>=24.4.2,<25",
-    "isort>=5.13.2,<6",
+    "ruff>=0.6",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -35,6 +35,13 @@ include = ["acelerado"]
 
 [tool.hatch.build.targets.wheel]
 include = ["acelerado"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
 
 [build-system]
 requires = ["hatchling"]
