@@ -166,7 +166,12 @@ def _make_channel(name: str) -> MagicMock:
 
     channel = MagicMock(spec=discord.TextChannel)
     channel.name = name
-    channel.send = AsyncMock()
+
+    # ``channel.send`` returns a Message-like mock so callers can chain
+    # ``.create_thread(...)`` (used by the auto-thread feature).
+    sent_message = MagicMock(spec=discord.Message)
+    sent_message.create_thread = AsyncMock()
+    channel.send = AsyncMock(return_value=sent_message)
     return channel
 
 

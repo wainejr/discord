@@ -138,7 +138,23 @@ class AceleradoState:
         if channel is None:
             logger.error("Announce channel disappeared from cache; cannot send")
             return
-        await channel.send(msg_send)
+        sent = await channel.send(msg_send)
+
+        if get_env().ACELERADO_AUTO_THREAD:
+            await self._open_discussion_thread(sent, title)
+
+    async def _open_discussion_thread(self, message: discord.Message, title: str) -> None:
+        """Open a thread on the announcement message for discussion.
+
+        Discord caps thread names at 100 chars; we truncate at 90 + "…" to
+        leave room for variability. Failures here must NOT prevent the
+        announcement itself — they're reported but swallowed.
+        """
+        thread_name = title if len(title) <= 90 else title[:90] + "…"
+        try:
+            await message.create_thread(name=thread_name)
+        except Exception as exc:
+            await self.report_error("auto_thread", exc)
 
     # ------------------------------------------------------------------
     # Token expiry warning (rate-limited, once/hour)
@@ -169,11 +185,12 @@ class AceleradoState:
     # YouTube Member role sync — walks *all* tiers, not just the first.
     # ------------------------------------------------------------------
 
-    async def check_members_apoiadores(self) -> None:
+    async def check_members_apoiadores(self) -> int:
+        """Sync YouTube Members → Registradores. Returns count of additions."""
         guild = self.bot.get_guild(get_env().DISCORD_GUILD_ID)
         if guild is None:
             logger.error("Guild not found in cache")
-            return
+            return 0
 
         yt_roles = [r for r in guild.roles if ROLE_NAME_YT_MEMBER_SUBSTRING in r.name]
         apoiadores_role = discord.utils.get(guild.roles, name=ROLE_NAME_APOIADORES)
@@ -182,12 +199,13 @@ class AceleradoState:
                 f"Missing roles: yt_roles={[r.name for r in yt_roles]} "
                 f"apoiadores_role={apoiadores_role}"
             )
-            return
+            return 0
 
         chat_channel = discord.utils.get(guild.channels, name=CHAT_MSG_ADD)
 
         # A member may appear in several YT-tier roles; dedupe before iterating.
         seen: set[int] = set()
+        added = 0
         for yt_role in yt_roles:
             for member in yt_role.members:
                 if member.id in seen:
@@ -199,6 +217,7 @@ class AceleradoState:
                 if member.name == "eniaw":
                     continue
                 await member.add_roles(apoiadores_role)
+                added += 1
                 if isinstance(chat_channel, discord.abc.Messageable):
                     await chat_channel.send(
                         f"Seja bem vindo aos {ROLE_NAME_APOIADORES}, <@{member.id}>!"
@@ -207,6 +226,7 @@ class AceleradoState:
                     f"Adding member {member} to {ROLE_NAME_APOIADORES} "
                     f"(source tier: {yt_role.name})!"
                 )
+        return added
 
     # ------------------------------------------------------------------
     # Error reporting — local log + rate-limited Discord notification.

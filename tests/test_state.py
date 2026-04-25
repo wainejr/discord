@@ -135,6 +135,64 @@ async def test_announce_video_members_only(built_state, make_video_fn, fake_guil
     assert "Vídeo novo pra membros!" in msg
 
 
+async def test_announce_video_opens_discussion_thread(built_state, make_video_fn, fake_guild):
+    video = make_video_fn(video_id="abc", title="A short title")
+    await built_state.announce_video("abc", video)
+
+    sent = fake_guild._announce.send.return_value
+    sent.create_thread.assert_awaited_once()
+    name = sent.create_thread.await_args.kwargs.get(
+        "name",
+        sent.create_thread.await_args.args[0] if sent.create_thread.await_args.args else None,
+    )
+    assert name == "A short title"
+
+
+async def test_announce_video_thread_name_truncated(built_state, make_video_fn, fake_guild):
+    long_title = "X" * 150
+    video = make_video_fn(video_id="abc", title=long_title)
+    await built_state.announce_video("abc", video)
+
+    sent = fake_guild._announce.send.return_value
+    name = sent.create_thread.await_args.kwargs.get(
+        "name",
+        sent.create_thread.await_args.args[0] if sent.create_thread.await_args.args else None,
+    )
+    assert len(name) <= 100  # Discord's hard cap
+    assert name.endswith("…")
+
+
+async def test_announce_video_thread_failure_is_reported_not_raised(
+    built_state, make_video_fn, fake_guild
+):
+    sent = fake_guild._announce.send.return_value
+    sent.create_thread.side_effect = RuntimeError("missing perms")
+
+    video = make_video_fn(video_id="abc", title="x")
+    # Must not raise — thread failure is non-fatal.
+    await built_state.announce_video("abc", video)
+
+    # The error went through report_error → log channel.
+    fake_guild._log.send.assert_awaited()
+    msg = fake_guild._log.send.await_args.args[0]
+    assert "auto_thread" in msg
+
+
+async def test_announce_video_no_thread_when_disabled(
+    built_state, make_video_fn, fake_guild, monkeypatch
+):
+    from acelerado import env as env_mod
+
+    monkeypatch.setenv("ACELERADO_AUTO_THREAD", "false")
+    env_mod.get_env.cache_clear()
+
+    video = make_video_fn(video_id="abc")
+    await built_state.announce_video("abc", video)
+
+    sent = fake_guild._announce.send.return_value
+    sent.create_thread.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # check_expiration — rate-limited warning
 # ---------------------------------------------------------------------------
@@ -284,6 +342,36 @@ async def test_event_loop_reports_failures_to_discord(built_state, fake_guild, m
 # ---------------------------------------------------------------------------
 # Multi-tier YouTube Member sync
 # ---------------------------------------------------------------------------
+
+
+async def test_members_check_returns_added_count(built_state, fake_guild):
+    """check_members_apoiadores returns how many members got the role."""
+    from unittest.mock import MagicMock
+
+    yt_role = fake_guild._yt_role
+    apoiadores = fake_guild._apoiadores_role
+
+    def _m(name: str, mid: int, has_apoiadores: bool):
+        m = MagicMock(name=f"M({name})")
+        m.name = name
+        m.id = mid
+        m.roles = [yt_role] + ([apoiadores] if has_apoiadores else [])
+        m.add_roles = AsyncMock()
+        return m
+
+    yt_role.members = [
+        _m("alice", 1, has_apoiadores=False),
+        _m("bob", 2, has_apoiadores=False),
+        _m("carol", 3, has_apoiadores=True),  # already in role
+    ]
+
+    added = await built_state.check_members_apoiadores()
+    assert added == 2
+
+
+async def test_members_check_returns_zero_when_guild_missing(built_state, fake_bot):
+    fake_bot.get_guild.side_effect = lambda gid: None
+    assert await built_state.check_members_apoiadores() == 0
 
 
 async def test_members_synced_across_multiple_tiers(built_state, fake_guild):
