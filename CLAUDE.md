@@ -116,7 +116,7 @@ The token-expiry math used `datetime.now()` (naive local) against `Credentials.e
 - `published.txt` is the source of truth for "already announced". It's seeded on first run from the latest 20 uploads if missing — don't delete it on a live deployment or you'll re-announce.
 - The OAuth token must be refreshed periodically; the bot itself only *warns* about expiry, it does not auto-renew the consent flow.
 - The YouTube client and upload-playlist ID are lazy-initialized via `@lru_cache` in `youtube.py` — first call triggers OAuth and the channel lookup.
-- The bot is event-driven, not command-driven; no slash commands are registered, so `bot.tree.sync()` is intentionally not called.
+- Slash commands live in `acelerado/slash.py`. `register_commands(tree, guild=...)` is called from `bot.setup_hook` and pushed via `tree.sync(guild=...)` — guild-scoped so changes propagate instantly. To add a new slash command: define it with `@app_commands.command(...)` in `slash.py`, add `tree.add_command(new_cmd, guild=guild)` inside `register_commands`, add a registration test in `tests/test_slash.py`. The bot is otherwise event-driven (no message-prefixed commands).
 
 ## Fail-proof contract
 

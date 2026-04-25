@@ -56,9 +56,17 @@ uv sync
 
    Na primeira execução que precisar da API do YouTube (por ex. `acelerado run` ou `acelerado refresh-token`), o navegador abrirá para consentimento e o token será salvo em `token.pickle`.
 
+## Slash commands no Discord
+
+| Comando | Descrição |
+|---------|-----------|
+| `/links` | Lista os canais/redes oficiais (resposta ephemeral, só você vê). |
+
+Todos os slash commands são **guild-scoped** — registrados no servidor configurado em `DISCORD_GUILD_ID`, propagam instantaneamente. Para adicionar um novo, ver `acelerado/slash.py`.
+
 ## Uso — CLI
 
-Toda a funcionalidade é exposta por um único entrypoint `acelerado`, montado com `typer`:
+Toda a funcionalidade administrativa é exposta por um único entrypoint `acelerado`, montado com `typer`:
 
 ```sh
 uv run acelerado --help

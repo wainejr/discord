@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands, tasks
 
 from acelerado.env import get_env
+from acelerado.slash import register_commands
 from acelerado.state import AceleradoState
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,16 @@ class AceleradoBot(commands.Bot):
         # configured value before the first tick.
         self.event_loop_task.change_interval(seconds=get_env().ACELERADO_TICK_SECONDS)
         self.event_loop_task.start()
+
+        # Register slash commands and sync them guild-scoped — propagates
+        # instantly, unlike global sync (~1h). Bot is single-guild today.
+        guild = discord.Object(id=get_env().DISCORD_GUILD_ID)
+        register_commands(self.tree, guild=guild)
+        try:
+            synced = await self.tree.sync(guild=guild)
+            logger.info(f"Synced {len(synced)} slash command(s) to guild {guild.id}")
+        except Exception:
+            logger.exception("Failed to sync slash commands; bot will run without them")
 
     async def on_ready(self) -> None:
         logger.info(f"Logged on as {self.user}!")
