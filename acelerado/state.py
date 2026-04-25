@@ -16,6 +16,7 @@ ROLE_NAME_APOIADORES = "Registradores"
 ROLE_NAME_YT_MEMBER_SUBSTRING = "YouTube Member"
 FILENAME_PUBLISHED = Path("published.txt")
 LAST_TICK_PATH = Path("last_tick.txt")
+LIVE_REMINDERS_PATH = Path("live_reminders.txt")
 
 # How often we're willing to post a "something blew up" report to Discord.
 # Local logs are always emitted; this only throttles the remote notification
@@ -108,6 +109,11 @@ class AceleradoState:
 
     def should_announce_video(self, video: dict) -> bool:
         if youtube.is_non_listed(video):
+            return False
+        # Scheduled-but-not-yet-live: handled by _check_upcoming_lives
+        # (reminder), not here. Avoid announcing "Estamos em live!" before
+        # the live actually starts.
+        if youtube.is_livestream(video) and not youtube.is_live_now(video):
             return False
         if not youtube.is_processed(video) and not youtube.is_livestream(video):
             return False
@@ -272,6 +278,57 @@ class AceleradoState:
     # Tick
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Upcoming livestream reminders
+    # ------------------------------------------------------------------
+
+    @property
+    def live_reminders_sent(self) -> set[str]:
+        """Already-reminded video IDs from ``live_reminders.txt``."""
+        if not LIVE_REMINDERS_PATH.exists():
+            return set()
+        return {ln.strip() for ln in LIVE_REMINDERS_PATH.read_text().splitlines() if ln.strip()}
+
+    def _record_live_reminder(self, video_id: str) -> None:
+        if video_id in self.live_reminders_sent:
+            return
+        if not LIVE_REMINDERS_PATH.exists():
+            LIVE_REMINDERS_PATH.write_text("")
+        current = LIVE_REMINDERS_PATH.read_text()
+        prefix = "" if not current or current.endswith("\n") else "\n"
+        with LIVE_REMINDERS_PATH.open("a") as f:
+            f.write(f"{prefix}{video_id}\n")
+
+    async def _check_upcoming_lives(self) -> None:
+        """Send a "live em N min" reminder for any scheduled live within window."""
+        now = datetime.now(UTC)
+        window = timedelta(minutes=get_env().ACELERADO_LIVE_REMINDER_MINUTES)
+        sent = self.live_reminders_sent
+
+        for vid in youtube.get_upcoming_livestream_ids():
+            if vid in sent:
+                continue
+            video = youtube.get_video_info(vid)
+            scheduled = youtube.get_scheduled_start_time(video)
+            if scheduled is None:
+                continue
+            time_until = scheduled - now
+            if time_until < timedelta(0) or time_until > window:
+                continue
+
+            title = youtube.get_video_title(video)
+            url = youtube.get_video_url(vid)
+            minutes = max(1, int(time_until.total_seconds() / 60))
+            msg = f"@everyone 🔔 Live em ~{minutes} min: **{title}**\n{url}"
+
+            channel = self.channel_announce
+            if channel is None:
+                logger.error("Announce channel disappeared; can't send live reminder")
+                return
+            await channel.send(msg)
+            self._record_live_reminder(vid)
+            logger.info(f"Posted live reminder for {vid} ({title})")
+
     async def _pub_new_videos(self) -> None:
         """Inner video-announcement step — pulled out so event_loop reads linearly."""
         for video_id in self.check_videos_to_pub():
@@ -292,6 +349,7 @@ class AceleradoState:
         steps = [
             ("apoiadores", self.check_members_apoiadores),
             ("expiration", self.check_expiration),
+            ("upcoming_lives", self._check_upcoming_lives),
             ("videos", self._pub_new_videos),
         ]
         for name, step in steps:

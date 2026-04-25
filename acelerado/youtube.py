@@ -126,6 +126,49 @@ def is_livestream(video: dict) -> bool:
     return "liveStreamingDetails" in video
 
 
+def is_live_now(video: dict) -> bool:
+    """True only when the live has actually started (and not yet ended).
+
+    A merely *scheduled* live also has ``liveStreamingDetails`` but no
+    ``actualStartTime``. Use this to distinguish "live right now" from
+    "live coming soon".
+    """
+    details = video.get("liveStreamingDetails", {})
+    return "actualStartTime" in details and "actualEndTime" not in details
+
+
+def get_scheduled_start_time(video: dict) -> datetime | None:
+    """Return ``scheduledStartTime`` as aware UTC datetime, or None."""
+    raw = video.get("liveStreamingDetails", {}).get("scheduledStartTime")
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        logger.warning(f"Invalid scheduledStartTime format: {raw!r}")
+        return None
+
+
+def get_upcoming_livestream_ids(max_results: int = 5) -> list[str]:
+    """Return video IDs for scheduled (not-yet-started) lives on the configured channel."""
+    response = (
+        _youtube()
+        .search()
+        .list(
+            part="snippet",
+            channelId=get_env().YOUTUBE_CHANNEL_ID,
+            type="video",
+            eventType="upcoming",
+            maxResults=max_results,
+        )
+        .execute()
+    )
+    items = response.get("items", [])
+    return [item["id"]["videoId"] for item in items if "videoId" in item.get("id", {})]
+
+
 def is_non_listed(video: dict) -> bool:
     return video["status"]["privacyStatus"] != "public"
 
