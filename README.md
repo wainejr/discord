@@ -63,6 +63,7 @@ uv sync
 |---------|-----------|
 | `/links` | Lista os canais/redes oficiais (resposta ephemeral, só você vê). |
 | `/sync` | (admin) Força a sincronização de cargos `Registradores` na hora — útil quando alguém acabou de virar membro pago no YouTube e não quer esperar o tick. |
+| `/update` | (admin) Faz `git pull` + `uv sync` e reinicia o bot via wrapper (exit code 75). Veja "Restart automático" abaixo. |
 
 Todos os slash commands são **guild-scoped** — registrados no servidor configurado em `DISCORD_GUILD_ID`, propagam instantaneamente. Para adicionar um novo, ver `acelerado/slash.py`.
 
@@ -81,6 +82,7 @@ uv run acelerado --help
 | `acelerado monitor`           | Abre a TUI (`textual`) com contagem regressiva do token ao vivo e lista de anúncios recentes. |
 | `acelerado audit-members`     | Lista membros com o cargo `Registradores` que perderam o cargo do YouTube (tabela `rich`). |
 | `acelerado refresh-token`     | Faz backup de `token.pickle` e refaz o fluxo OAuth.                     |
+| `acelerado update`            | Faz `git pull --ff-only` + `uv sync --frozen`. Sai com exit 75 se atualizou; o wrapper externo deve restartar. |
 
 ### Logs
 
@@ -115,7 +117,9 @@ uv run acelerado run
 # tmux attach -t acelerado pra reanexar depois
 ```
 
-Pra reiniciar automaticamente em caso de crash, um one-liner também resolve:
+### Restart automático
+
+Pra reiniciar automaticamente em caso de crash **ou** após `acelerado update` / `/update`, use um wrapper de loop:
 
 ```sh
 while true; do uv run acelerado run; sleep 5; done
@@ -125,6 +129,19 @@ Ou, dentro do tmux:
 
 ```sh
 tmux new -s acelerado 'while true; do uv run acelerado run; sleep 5; done'
+```
+
+O bot sai com exit code **75** quando se atualiza com sucesso (convenção `EX_TEMPFAIL` do Unix). O loop acima não distingue exit codes — só restarta. Se quiser tratar exit 75 como "restart pedido" e qualquer outro como "crash com cooldown maior":
+
+```sh
+while true; do
+  uv run acelerado run
+  code=$?
+  case "$code" in
+    75) echo "[restart pedido pelo bot]"; sleep 1 ;;
+    *)  echo "[crash exit=$code]"; sleep 5 ;;
+  esac
+done
 ```
 
 Pra copiar um `token.pickle` renovado pra uma máquina remota (ex.: Raspberry Pi), há o utilitário `scripts/send_token.sh` (ajuste o host `home_rasp` pro seu `~/.ssh/config`).

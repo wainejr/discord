@@ -51,3 +51,68 @@ def test_log_level_option_accepted(chdir_tmp):
 def test_invalid_log_level_fails(chdir_tmp):
     result = runner.invoke(app, ["--log-level", "XYZ", "status"])
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# acelerado update
+# ---------------------------------------------------------------------------
+
+
+def test_update_command_clean(monkeypatch, chdir_tmp):
+    from acelerado import updater
+
+    monkeypatch.setattr(
+        updater,
+        "apply_updates",
+        lambda repo=None: updater.UpdateResult(status="clean", head="abc1234"),
+    )
+
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == 0
+    assert "Nada pra atualizar" in result.stdout
+
+
+def test_update_command_ok_exits_with_restart_code(monkeypatch, chdir_tmp):
+    from acelerado import updater
+
+    monkeypatch.setattr(
+        updater,
+        "apply_updates",
+        lambda repo=None: updater.UpdateResult(
+            status="ok",
+            head="newhash1234567",
+            commits=["d2 c1", "c1 c0"],
+        ),
+    )
+
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == updater.EXIT_RESTART
+    assert "Atualizado" in result.stdout
+
+
+def test_update_command_conflict_exits_one(monkeypatch, chdir_tmp):
+    from acelerado import updater
+
+    monkeypatch.setattr(
+        updater,
+        "apply_updates",
+        lambda repo=None: updater.UpdateResult(status="conflict", message="bad merge"),
+    )
+
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == 1
+    assert "Conflito" in result.stdout
+
+
+def test_update_command_error_exits_one(monkeypatch, chdir_tmp):
+    from acelerado import updater
+
+    monkeypatch.setattr(
+        updater,
+        "apply_updates",
+        lambda repo=None: updater.UpdateResult(status="error", message="something blew up"),
+    )
+
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == 1
+    assert "Falhou" in result.stdout

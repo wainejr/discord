@@ -7,6 +7,7 @@ constructor doesn't open any sockets.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -159,3 +160,107 @@ async def test_sync_command_handles_uninitialized_bot():
     interaction.response.send_message.assert_awaited_once()
     msg = interaction.response.send_message.await_args.args[0]
     assert "ainda não" in msg.lower()
+
+
+# ---------------------------------------------------------------------------
+# /update admin command
+# ---------------------------------------------------------------------------
+
+
+def test_register_update_command():
+    tree = _build_tree()
+    guild = discord.Object(id=1)
+    register_commands(tree, guild=guild)
+
+    cmd = tree.get_command("update", guild=guild)
+    assert cmd is not None
+    assert cmd.default_permissions is not None
+    assert cmd.default_permissions.administrator is True
+
+
+def _make_update_interaction():
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.response = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+async def test_update_command_clean_no_restart(monkeypatch):
+    from acelerado import slash, updater
+    from acelerado.slash import cmd_update
+
+    monkeypatch.setattr(
+        updater,
+        "apply_updates",
+        lambda repo=None: updater.UpdateResult(status="clean", message="up to date"),
+    )
+
+    # Sentinel: ensure _delayed_exit not scheduled on clean.
+    exit_calls = []
+    monkeypatch.setattr(slash, "_delayed_exit", lambda *a, **kw: exit_calls.append(a))
+
+    interaction = _make_update_interaction()
+    await cmd_update.callback(interaction)
+
+    interaction.followup.send.assert_awaited_once()
+    msg = interaction.followup.send.await_args.args[0]
+    assert "Nada pra atualizar" in msg
+    assert exit_calls == []
+
+
+async def test_update_command_conflict_no_restart(monkeypatch):
+    from acelerado import slash, updater
+    from acelerado.slash import cmd_update
+
+    monkeypatch.setattr(
+        updater,
+        "apply_updates",
+        lambda repo=None: updater.UpdateResult(status="conflict", message="would be overwritten"),
+    )
+    exit_calls = []
+    monkeypatch.setattr(slash, "_delayed_exit", lambda *a, **kw: exit_calls.append(a))
+
+    interaction = _make_update_interaction()
+    await cmd_update.callback(interaction)
+
+    msg = interaction.followup.send.await_args.args[0]
+    assert "Conflito" in msg
+    assert exit_calls == []
+
+
+async def test_update_command_ok_schedules_restart(monkeypatch):
+    import asyncio
+
+    from acelerado import slash, updater
+    from acelerado.slash import cmd_update
+
+    monkeypatch.setattr(
+        updater,
+        "apply_updates",
+        lambda repo=None: updater.UpdateResult(
+            status="ok",
+            head="newhash1234",
+            commits=["c1 first commit", "c2 second commit"],
+            message="Updated",
+        ),
+    )
+
+    scheduled: list[Any] = []
+
+    async def fake_delayed_exit(code, delay_seconds=3.0):
+        scheduled.append((code, delay_seconds))
+
+    monkeypatch.setattr(slash, "_delayed_exit", fake_delayed_exit)
+
+    interaction = _make_update_interaction()
+    await cmd_update.callback(interaction)
+
+    msg = interaction.followup.send.await_args.args[0]
+    assert "Atualizado pra" in msg
+    assert "newhash" in msg
+    # A restart was scheduled
+    await asyncio.sleep(0)  # let the create_task run
+    assert len(scheduled) == 1
+    assert scheduled[0][0] == updater.EXIT_RESTART

@@ -81,6 +81,59 @@ async def cmd_sync(interaction: discord.Interaction) -> None:
     await interaction.followup.send(msg, ephemeral=True)
 
 
+@app_commands.command(
+    name="update",
+    description="(admin) Pull do código + uv sync; reinicia o bot via wrapper",
+)
+@app_commands.default_permissions(administrator=True)
+async def cmd_update(interaction: discord.Interaction) -> None:
+    import asyncio
+
+    from acelerado.updater import EXIT_RESTART, apply_updates
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    # apply_updates is sync (subprocess), run off the event loop.
+    result = await asyncio.to_thread(apply_updates)
+
+    if result.status == "clean":
+        await interaction.followup.send("⏸️ Nada pra atualizar.", ephemeral=True)
+        return
+    if result.status == "conflict":
+        await interaction.followup.send(
+            f"❌ Conflito impede o pull:\n```\n{result.message[:500]}\n```",
+            ephemeral=True,
+        )
+        return
+    if result.status == "error":
+        await interaction.followup.send(
+            f"❌ Erro: `{result.message[:500]}`",
+            ephemeral=True,
+        )
+        return
+
+    # status == "ok" — schedule restart after the response delivers.
+    commits_text = "\n".join(f"• {c}" for c in result.commits[:10])
+    if len(result.commits) > 10:
+        commits_text += f"\n• … (+{len(result.commits) - 10})"
+    await interaction.followup.send(
+        f"✅ Atualizado pra `{result.short_head}` ({len(result.commits)} commits)\n"
+        f"{commits_text}\n\n"
+        f"⚠️ Encerrando com exit {EXIT_RESTART} em 3s — wrapper deve restartar.",
+        ephemeral=True,
+    )
+    asyncio.create_task(_delayed_exit(EXIT_RESTART))
+
+
+async def _delayed_exit(code: int, delay_seconds: float = 3.0) -> None:
+    """Sleep briefly so the followup message ships, then exit hard."""
+    import asyncio
+    import os
+
+    await asyncio.sleep(delay_seconds)
+    logger.warning(f"Exiting with code {code} for wrapper-driven restart")
+    os._exit(code)
+
+
 def register_commands(
     tree: app_commands.CommandTree,
     guild: discord.abc.Snowflake | None = None,
@@ -92,3 +145,4 @@ def register_commands(
     """
     tree.add_command(cmd_links, guild=guild)
     tree.add_command(cmd_sync, guild=guild)
+    tree.add_command(cmd_update, guild=guild)
