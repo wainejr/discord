@@ -1,14 +1,19 @@
+import datetime as _dt
 import logging
+from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands, tasks
 
-from acelerado import moderation, welcome
+from acelerado import moderation, review, welcome
 from acelerado.env import get_env
 from acelerado.slash import register_commands
 from acelerado.state import AceleradoState
 
 logger = logging.getLogger(__name__)
+
+# Mondays at 09:00 America/Sao_Paulo for the weekly drafts.
+_MON_9AM_SP = _dt.time(hour=9, minute=0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
 class AceleradoBot(commands.Bot):
@@ -23,6 +28,8 @@ class AceleradoBot(commands.Bot):
         # configured value before the first tick.
         self.event_loop_task.change_interval(seconds=get_env().ACELERADO_TICK_SECONDS)
         self.event_loop_task.start()
+        self.weekly_summary_task.start()
+        self.weekly_stale_task.start()
 
         # Register slash commands and sync them guild-scoped — propagates
         # instantly, unlike global sync (~1h). Bot is single-guild today.
@@ -104,6 +111,42 @@ class AceleradoBot(commands.Bot):
         await self.wait_until_ready()
         if self.state_handler is None:
             self.state_handler = AceleradoState(self)
+
+    # ------------------------------------------------------------------
+    # Weekly scheduled drafts (run Monday 9am SP)
+    # ------------------------------------------------------------------
+
+    @tasks.loop(time=[_MON_9AM_SP])
+    async def weekly_summary_task(self) -> None:
+        # discord.py's tasks.loop with `time=` fires daily at that time;
+        # gate to Mondays only.
+        if _dt.datetime.now(_MON_9AM_SP.tzinfo).weekday() != 0:
+            return
+        try:
+            await review.post_weekly_summary_draft(self)
+        except Exception as exc:
+            logger.exception("weekly_summary_task failed")
+            if self.state_handler is not None:
+                await self.state_handler.report_error("weekly_summary", exc)
+
+    @weekly_summary_task.before_loop
+    async def _before_weekly_summary(self) -> None:
+        await self.wait_until_ready()
+
+    @tasks.loop(time=[_MON_9AM_SP])
+    async def weekly_stale_task(self) -> None:
+        if _dt.datetime.now(_MON_9AM_SP.tzinfo).weekday() != 0:
+            return
+        try:
+            await review.post_stale_report(self)
+        except Exception as exc:
+            logger.exception("weekly_stale_task failed")
+            if self.state_handler is not None:
+                await self.state_handler.report_error("weekly_stale", exc)
+
+    @weekly_stale_task.before_loop
+    async def _before_weekly_stale(self) -> None:
+        await self.wait_until_ready()
 
     @event_loop_task.error
     async def _event_loop_error(self, exc: BaseException) -> None:

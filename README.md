@@ -52,6 +52,8 @@ uv sync
    | `DISCORD_MODS_CHANNEL_ID`       | (opcional) Canal privado de mods. Recebe `/report` e logs de bloqueios anti-spam. |
    | `ACELERADO_INVITE_WHITELIST`    | (opcional) Lista de guild IDs (separados por vírgula) cujos convites NÃO são bloqueados. |
    | `ACELERADO_LIVE_REMINDER_MINUTES`| (opcional) Quantos minutos antes do início de uma live agendada o bot avisa. Default `15`. |
+   | `DISCORD_REVIEW_CHANNEL_ID`     | (opcional) Canal privado pros rascunhos do resumo semanal aguardarem aprovação. |
+   | `ACELERADO_APOIADORES_WHITELIST`| (opcional) Usernames isentos do relatório de apoiadores stale. Default `eniaw`. |
 
 2. **Credenciais OAuth do Google** — copie o exemplo e substitua pelos valores da sua app:
 
@@ -69,6 +71,8 @@ uv sync
 | `/sync` | (admin) Força a sincronização de cargos `Registradores` na hora — útil quando alguém acabou de virar membro pago no YouTube e não quer esperar o tick. |
 | `/update` | (admin) Faz `git pull` + `uv sync` e reinicia o bot via wrapper (exit code 75). Veja "Restart automático" abaixo. |
 | `/report` | Reportar uma mensagem aos mods. Recebe link da mensagem (Copy Message Link) + motivo. Rate-limit de 3 reports / 10min por usuário. |
+| `/preview-summary` | (admin) Posta o rascunho do resumo semanal **agora** no canal de review (botões pra Aprovar / Editar / Descartar). |
+| `/preview-stale` | (admin) Posta a lista de apoiadores stale **agora** no canal de mods. |
 
 Todos os slash commands são **guild-scoped** — registrados no servidor configurado em `DISCORD_GUILD_ID`, propagam instantaneamente. Para adicionar um novo, ver `acelerado/slash.py`.
 
