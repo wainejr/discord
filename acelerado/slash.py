@@ -138,6 +138,50 @@ async def _delayed_exit(code: int, delay_seconds: float = 3.0) -> None:
 _MESSAGE_LINK_RE = re.compile(r"https?://(?:\w+\.)?discord\.com/channels/(\d+)/(\d+)/(\d+)")
 
 
+@app_commands.command(
+    name="godbolt",
+    description="Gera link do Compiler Explorer com seu código",
+)
+@app_commands.describe(
+    language="Linguagem do código (c, c++, rust, zig, go)",
+    code="Código (até ~3000 chars)",
+)
+@app_commands.choices(
+    language=[
+        app_commands.Choice(name="C", value="c"),
+        app_commands.Choice(name="C++", value="c++"),
+        app_commands.Choice(name="Rust", value="rust"),
+        app_commands.Choice(name="Zig", value="zig"),
+        app_commands.Choice(name="Go", value="go"),
+    ]
+)
+async def cmd_godbolt(
+    interaction: discord.Interaction,
+    language: app_commands.Choice[str],
+    code: str,
+) -> None:
+    from acelerado import godbolt
+
+    try:
+        url = godbolt.build_clientstate_url(language.value, code)
+    except ValueError as exc:
+        await interaction.response.send_message(
+            f"⚠️ {exc}. Suportadas: {', '.join(godbolt.supported_keys())}",
+            ephemeral=True,
+        )
+        return
+
+    embed = discord.Embed(
+        title=f"🔗 Compiler Explorer — {language.name}",
+        description=f"[Abrir no godbolt.org]({url})",
+        color=discord.Color.dark_orange(),
+    )
+    embed.add_field(name="Snippet", value=f"```{language.value}\n{code[:500]}\n```", inline=False)
+    if len(code) > 500:
+        embed.set_footer(text=f"(snippet truncado — {len(code)} chars no link)")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 @app_commands.command(name="report", description="Reportar uma mensagem aos mods")
 @app_commands.describe(
     message_link="Link da mensagem (clique-direito → Copy Message Link)",
@@ -209,3 +253,4 @@ def register_commands(
     tree.add_command(cmd_report, guild=guild)
     tree.add_command(cmd_preview_summary, guild=guild)
     tree.add_command(cmd_preview_stale, guild=guild)
+    tree.add_command(cmd_godbolt, guild=guild)
