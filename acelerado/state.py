@@ -1,12 +1,12 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
 import discord
 from discord.ext import commands
 
-from acelerado import youtube
+from acelerado import metrics, youtube
 from acelerado.env import get_env
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,7 @@ CHAT_MSG_ADD = "chat-registradores"
 ROLE_NAME_APOIADORES = "Registradores"
 ROLE_NAME_YT_MEMBER_SUBSTRING = "YouTube Member"
 FILENAME_PUBLISHED = Path("published.txt")
+LAST_TICK_PATH = Path("last_tick.txt")
 
 # How often we're willing to post a "something blew up" report to Discord.
 # Local logs are always emitted; this only throttles the remote notification
@@ -139,6 +140,7 @@ class AceleradoState:
             logger.error("Announce channel disappeared from cache; cannot send")
             return
         sent = await channel.send(msg_send)
+        metrics.increment("videos_announced", context=video_id)
 
         if get_env().ACELERADO_AUTO_THREAD:
             await self._open_discussion_thread(sent, title)
@@ -230,6 +232,8 @@ class AceleradoState:
                     f"Adding member {member} to {ROLE_NAME_APOIADORES} "
                     f"(source tier: {yt_role.name})!"
                 )
+        if added > 0:
+            metrics.increment("members_synced", value=added)
         return added
 
     # ------------------------------------------------------------------
@@ -243,6 +247,7 @@ class AceleradoState:
         Discord message is readable at a glance.
         """
         logger.exception(f"[{context}] {type(exc).__name__}: {exc}", exc_info=exc)
+        metrics.increment("errors", context=context)
 
         now = datetime.now()
         if now - self._last_error_report < ERROR_REPORT_COOLDOWN:
@@ -294,5 +299,12 @@ class AceleradoState:
                 await step()
             except Exception as exc:
                 await self.report_error(name, exc)
+
+        # Mark a successful tick — used by external healthcheck.
+        try:
+            LAST_TICK_PATH.write_text(datetime.now(UTC).isoformat())
+            metrics.mark_tick()
+        except Exception:
+            logger.exception("Failed to write last_tick / metrics")
 
         logger.info("Finished event loop!")

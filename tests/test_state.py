@@ -323,6 +323,76 @@ async def test_members_missing_guild_is_logged_not_raised(built_state, fake_bot,
 # ---------------------------------------------------------------------------
 
 
+async def test_event_loop_writes_last_tick_file(built_state, chdir_tmp, monkeypatch):
+    from acelerado import state as state_mod
+
+    monkeypatch.setattr(built_state, "check_members_apoiadores", AsyncMock())
+    monkeypatch.setattr(built_state, "check_expiration", AsyncMock())
+    monkeypatch.setattr(built_state, "_pub_new_videos", AsyncMock())
+
+    await built_state.event_loop()
+
+    assert state_mod.LAST_TICK_PATH.exists()
+    # ISO timestamp parses cleanly
+    from datetime import datetime
+
+    parsed = datetime.fromisoformat(state_mod.LAST_TICK_PATH.read_text())
+    assert parsed.tzinfo is not None  # aware UTC
+
+
+async def test_event_loop_marks_metrics_tick(built_state, chdir_tmp, monkeypatch):
+    from acelerado import metrics
+
+    monkeypatch.setattr(built_state, "check_members_apoiadores", AsyncMock())
+    monkeypatch.setattr(built_state, "check_expiration", AsyncMock())
+    monkeypatch.setattr(built_state, "_pub_new_videos", AsyncMock())
+
+    await built_state.event_loop()
+    m = metrics.load()
+    assert m.last_successful_tick is not None
+
+
+async def test_announce_video_increments_metric(built_state, fake_guild, make_video_fn, chdir_tmp):
+    from acelerado import metrics
+
+    video = make_video_fn(video_id="abc")
+    await built_state.announce_video("abc", video)
+
+    m = metrics.load()
+    assert any(e.context == "abc" for e in m.videos_announced)
+
+
+async def test_check_members_increments_metric_with_count(built_state, fake_guild, chdir_tmp):
+    from unittest.mock import MagicMock
+
+    from acelerado import metrics
+
+    yt = fake_guild._yt_role
+
+    def _m(name, mid):
+        m = MagicMock()
+        m.name = name
+        m.id = mid
+        m.roles = [yt]
+        m.add_roles = AsyncMock()
+        return m
+
+    yt.members = [_m("a", 1), _m("b", 2)]
+    await built_state.check_members_apoiadores()
+
+    loaded = metrics.load()
+    total_value = sum(e.value for e in loaded.members_synced)
+    assert total_value == 2
+
+
+async def test_report_error_increments_metric(built_state, chdir_tmp):
+    from acelerado import metrics
+
+    await built_state.report_error("ctx_a", RuntimeError("oops"))
+    loaded = metrics.load()
+    assert any(e.context == "ctx_a" for e in loaded.errors)
+
+
 async def test_event_loop_isolates_step_errors(built_state, monkeypatch):
     async def raising():
         raise RuntimeError("boom")
