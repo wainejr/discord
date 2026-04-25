@@ -49,6 +49,8 @@ uv sync
    | `ACELERADO_LOG_LEVEL`           | (opcional) `DEBUG`/`INFO`/`WARNING`/…           |
    | `ACELERADO_AUTO_THREAD`         | (opcional) Auto-cria thread no anúncio de vídeo, default `true` |
    | `DISCORD_WELCOME_CHANNEL_ID`    | (opcional) Canal pra mensagem de boas-vindas. Se `0`/vazio, tenta DM. |
+   | `DISCORD_MODS_CHANNEL_ID`       | (opcional) Canal privado de mods. Recebe `/report` e logs de bloqueios anti-spam. |
+   | `ACELERADO_INVITE_WHITELIST`    | (opcional) Lista de guild IDs (separados por vírgula) cujos convites NÃO são bloqueados. |
 
 2. **Credenciais OAuth do Google** — copie o exemplo e substitua pelos valores da sua app:
 
@@ -65,6 +67,7 @@ uv sync
 | `/links` | Lista os canais/redes oficiais (resposta ephemeral, só você vê). |
 | `/sync` | (admin) Força a sincronização de cargos `Registradores` na hora — útil quando alguém acabou de virar membro pago no YouTube e não quer esperar o tick. |
 | `/update` | (admin) Faz `git pull` + `uv sync` e reinicia o bot via wrapper (exit code 75). Veja "Restart automático" abaixo. |
+| `/report` | Reportar uma mensagem aos mods. Recebe link da mensagem (Copy Message Link) + motivo. Rate-limit de 3 reports / 10min por usuário. |
 
 Todos os slash commands são **guild-scoped** — registrados no servidor configurado em `DISCORD_GUILD_ID`, propagam instantaneamente. Para adicionar um novo, ver `acelerado/slash.py`.
 

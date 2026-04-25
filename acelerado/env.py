@@ -24,6 +24,15 @@ class EnvCfg(BaseSettings):
     # tries to DM the new member (which silently no-ops if DMs are blocked).
     DISCORD_WELCOME_CHANNEL_ID: int = 0
 
+    # Channel ID where moderation reports + invite-block notifications go.
+    # If 0/unset, those events are only logged locally.
+    DISCORD_MODS_CHANNEL_ID: int = 0
+
+    # Comma-separated guild IDs whose invites are tolerated even when posted by
+    # non-mods (parceiros, irmãos do servidor, etc.). The own guild is always
+    # implicitly allowed.
+    ACELERADO_INVITE_WHITELIST: str = ""
+
 
 @lru_cache(maxsize=1)
 def get_env() -> EnvCfg:
