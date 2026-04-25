@@ -62,6 +62,53 @@ uv sync
 
    Na primeira execução que precisar da API do YouTube (por ex. `acelerado run` ou `acelerado refresh-token`), o navegador abrirá para consentimento e o token será salvo em `token.pickle`.
 
+## Como obter as credenciais
+
+Passo-a-passo pra preencher tudo do zero. Se você já tem app de bot no Discord e projeto no Google Cloud, pula direto pra "Pegando os IDs do servidor" no fim.
+
+### Discord — bot + token + intent
+
+1. Acesse o [Discord Developer Portal](https://discord.com/developers/applications) e clique em **New Application**.
+2. Dê um nome, aceite os termos.
+3. Na navegação à esquerda, vá em **Bot**:
+   - Clique em **Reset Token** e copie o valor — vira o seu `DISCORD_TOKEN` no `.env`. **Esse token nunca deve ser compartilhado nem commitado.**
+   - Em **Privileged Gateway Intents**, ligue **Server Members Intent** (necessário pra sincronização de cargos).
+4. Em **OAuth2 → URL Generator** (menu esquerdo):
+   - **Scopes**: marque `bot` e `applications.commands`.
+   - **Bot Permissions**: marque pelo menos `Send Messages`, `Manage Messages` (pra anti-spam de invites), `Manage Roles` (pra adicionar `Registradores`), `Read Messages/View Channels`, `Create Public Threads` (pra auto-thread em anúncios).
+   - Copie a URL gerada e abra num navegador logado na sua conta Discord. Selecione o servidor onde o bot vai entrar e autorize.
+
+### Google Cloud — OAuth + API key
+
+1. Acesse o [Google Cloud Console](https://console.cloud.google.com/) e crie (ou selecione) um projeto.
+2. Em **APIs e Serviços → Biblioteca**, busque **YouTube Data API v3** e clique em **Ativar**.
+3. **Tela de consentimento OAuth**: configure como "Externo" (mesmo se for só pra você), preencha nome do app e e-mail de suporte. Em "Usuários de teste", adicione o e-mail do dono do canal do YouTube.
+4. **APIs e Serviços → Credenciais**:
+   - **Criar credenciais → ID do cliente OAuth** → tipo de aplicativo "App para computador". Baixe o JSON e renomeie pra `credentials.json` na raiz do repo.
+   - **Criar credenciais → Chave de API** → copia a chave; vira o `YOUTUBE_API_KEY` no `.env`. Se quiser, restrinja a chave à YouTube Data API v3.
+
+### IDs do servidor (Discord) e do canal (YouTube)
+
+**Discord — habilite o Modo de Desenvolvedor**:
+- Configurações do usuário → Avançado → ligue "Modo de desenvolvedor".
+- Agora clique-direito em qualquer servidor / canal / cargo → **Copiar ID**.
+- Pra `DISCORD_GUILD_ID`: clique-direito no nome do servidor → Copiar ID.
+- Pra `DISCORD_ANNOUNCE_CHANNEL_ID` / `DISCORD_LOG_CHANNEL_ID` / `DISCORD_WELCOME_CHANNEL_ID` / `DISCORD_MODS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID`: clique-direito no canal → Copiar ID.
+
+**YouTube — `YOUTUBE_CHANNEL_ID`**:
+- Painel de criador (`studio.youtube.com`) → Configurações → Canal → ID do canal. Começa com `UC...`.
+- Ou: na URL do seu canal `youtube.com/channel/UCxxxxxx`, é o segmento depois de `/channel/`.
+
+### Primeiro consentimento
+
+Na primeira vez que rodar algo que toca a API privada do YouTube (membros, vídeos não-listados):
+
+```sh
+uv run acelerado refresh-token
+```
+
+Vai abrir o navegador. Faça login com a conta do criador (a mesma cadastrada como "usuário de teste" na tela de consentimento OAuth). O token vai pra `token.pickle`. A partir daí, `acelerado run` funciona sem nova interação.
+
 ## Slash commands no Discord
 
 | Comando | Descrição |
@@ -214,6 +261,8 @@ token.pickle      # token OAuth em cache (gitignored)
 ```
 
 ## Como contribuir
+
+Veja [CONTRIBUTING.md](./CONTRIBUTING.md) pra um guia rápido (setup, padrões, workflow). Resumo:
 
 1. Faça um fork deste repositório.
 2. Clone o seu fork:
