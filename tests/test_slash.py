@@ -230,6 +230,34 @@ async def test_update_command_conflict_no_restart(monkeypatch):
     assert exit_calls == []
 
 
+async def test_register_report_command():
+    tree = _build_tree()
+    guild = discord.Object(id=1)
+    register_commands(tree, guild=guild)
+    cmd = tree.get_command("report", guild=guild)
+    assert cmd is not None
+    assert cmd.name == "report"
+
+
+async def test_report_invalid_link_responds_with_warning():
+    from acelerado.slash import cmd_report
+
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.client = MagicMock()
+    interaction.user = MagicMock()
+    interaction.response = MagicMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+
+    await cmd_report.callback(interaction, message_link="not-a-link", reason="x")
+
+    interaction.response.send_message.assert_awaited_once()
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "inválido" in msg.lower()
+
+
 async def test_update_command_ok_schedules_restart(monkeypatch):
     import asyncio
 

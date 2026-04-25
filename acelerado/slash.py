@@ -13,6 +13,7 @@ To add a new command:
 """
 
 import logging
+import re
 
 import discord
 from discord import app_commands
@@ -134,6 +135,63 @@ async def _delayed_exit(code: int, delay_seconds: float = 3.0) -> None:
     os._exit(code)
 
 
+_MESSAGE_LINK_RE = re.compile(r"https?://(?:\w+\.)?discord\.com/channels/(\d+)/(\d+)/(\d+)")
+
+
+@app_commands.command(name="report", description="Reportar uma mensagem aos mods")
+@app_commands.describe(
+    message_link="Link da mensagem (clique-direito → Copy Message Link)",
+    reason="Por que essa mensagem é problemática",
+)
+async def cmd_report(
+    interaction: discord.Interaction,
+    message_link: str,
+    reason: str,
+) -> None:
+    from typing import cast
+
+    from discord.ext import commands
+
+    from acelerado import moderation
+
+    bot = cast(commands.Bot, interaction.client)
+
+    match = _MESSAGE_LINK_RE.search(message_link.strip())
+    if match is None:
+        await interaction.response.send_message(
+            "⚠️ Link inválido. Clique-direito numa mensagem → 'Copy Message Link'.",
+            ephemeral=True,
+        )
+        return
+
+    _, channel_id, message_id = (int(g) for g in match.groups())
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            channel = await bot.fetch_channel(channel_id)
+        if not isinstance(channel, discord.abc.Messageable):
+            await interaction.followup.send("⚠️ Canal não acessível.", ephemeral=True)
+            return
+        target = await channel.fetch_message(message_id)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+        await interaction.followup.send(
+            f"⚠️ Não foi possível buscar a mensagem: `{type(exc).__name__}`",
+            ephemeral=True,
+        )
+        return
+
+    try:
+        result_msg = await moderation.deliver_report(bot, interaction.user, target, reason)
+    except moderation.ReportRateLimited:
+        result_msg = (
+            f"⏸️ Você já usou o limite de {moderation._REPORT_RATE_MAX} reports nos "
+            f"últimos {int(moderation._REPORT_RATE_WINDOW / 60)} minutos. Aguarde."
+        )
+    await interaction.followup.send(result_msg, ephemeral=True)
+
+
 def register_commands(
     tree: app_commands.CommandTree,
     guild: discord.abc.Snowflake | None = None,
@@ -146,3 +204,4 @@ def register_commands(
     tree.add_command(cmd_links, guild=guild)
     tree.add_command(cmd_sync, guild=guild)
     tree.add_command(cmd_update, guild=guild)
+    tree.add_command(cmd_report, guild=guild)
