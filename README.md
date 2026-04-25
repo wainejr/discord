@@ -86,6 +86,7 @@ uv run acelerado --help
 | `acelerado audit-members`     | Lista membros com o cargo `Registradores` que perderam o cargo do YouTube (tabela `rich`). |
 | `acelerado refresh-token`     | Faz backup de `token.pickle` e refaz o fluxo OAuth.                     |
 | `acelerado update`            | Faz `git pull --ff-only` + `uv sync --frozen`. Sai com exit 75 se atualizou; o wrapper externo deve restartar. |
+| `acelerado healthcheck [--max-age N]` | Lê `last_tick.txt` e retorna exit 0 (ok) ou 1 (stale/missing). Default `--max-age` = 2× tick interval. Útil em cron. |
 
 ### Logs
 

@@ -147,6 +147,44 @@ def monitor() -> None:
 
 
 @app.command()
+def healthcheck(
+    max_age: Annotated[
+        int | None,
+        typer.Option(
+            "--max-age",
+            help="Idade máxima do último tick em segundos (default: 2× ACELERADO_TICK_SECONDS).",
+        ),
+    ] = None,
+) -> None:
+    """Reporta saúde do bot via ``last_tick.txt``. Exit 0 se OK, 1 se stale/missing."""
+    from datetime import UTC, datetime
+
+    from acelerado.env import get_env
+    from acelerado.state import LAST_TICK_PATH
+
+    if max_age is None:
+        max_age = 2 * get_env().ACELERADO_TICK_SECONDS
+
+    if not LAST_TICK_PATH.exists():
+        console.print("[red]❌ stale:[/] last_tick.txt não existe (bot nunca rodou um tick)")
+        raise typer.Exit(code=1)
+
+    raw = LAST_TICK_PATH.read_text(encoding="utf-8").strip()
+    try:
+        last = datetime.fromisoformat(raw)
+    except ValueError:
+        console.print(f"[red]❌ stale:[/] last_tick.txt corrompido: {raw!r}")
+        raise typer.Exit(code=1) from None
+
+    now = datetime.now(last.tzinfo or UTC)
+    age = (now - last).total_seconds()
+    if age > max_age:
+        console.print(f"[red]❌ stale:[/] último tick há [bold]{int(age)}s[/] (limite {max_age}s)")
+        raise typer.Exit(code=1)
+    console.print(f"[green]✅ ok:[/] último tick há [bold]{int(age)}s[/] (limite {max_age}s)")
+
+
+@app.command()
 def update() -> None:
     """Pull latest commits and re-sync deps. Exit code 75 on success → wrapper restarts."""
     from acelerado.updater import EXIT_RESTART, apply_updates
