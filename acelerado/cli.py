@@ -146,5 +146,34 @@ def monitor() -> None:
     run_monitor()
 
 
+@app.command()
+def update() -> None:
+    """Pull latest commits and re-sync deps. Exit code 75 on success → wrapper restarts."""
+    from acelerado.updater import EXIT_RESTART, apply_updates
+
+    result = apply_updates()
+
+    if result.status == "clean":
+        console.print("[yellow]⏸️  Nada pra atualizar[/]")
+        return
+    if result.status == "ok":
+        console.print(
+            f"[green]✅ Atualizado pra [bold]{result.short_head}[/bold] "
+            f"({len(result.commits)} commits)[/]"
+        )
+        for line in result.commits[:20]:
+            console.print(f"  • {line}")
+        console.print(
+            f"\n[bold]Saindo com exit {EXIT_RESTART}[/] — wrapper externo deve restartar."
+        )
+        raise typer.Exit(code=EXIT_RESTART)
+    if result.status == "conflict":
+        console.print(f"[red]❌ Conflito (working tree não fast-forwardável):[/]\n{result.message}")
+        raise typer.Exit(code=1)
+    # error
+    console.print(f"[red]❌ Falhou:[/] {result.message}")
+    raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     app()
