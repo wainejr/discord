@@ -165,17 +165,36 @@ async def test_announce_video_thread_name_truncated(built_state, make_video_fn, 
 async def test_announce_video_thread_failure_is_reported_not_raised(
     built_state, make_video_fn, fake_guild
 ):
+    from unittest.mock import MagicMock as _MM
+
+    import discord
+
     sent = fake_guild._announce.send.return_value
-    sent.create_thread.side_effect = RuntimeError("missing perms")
+    # Forbidden is a subclass of HTTPException — the only kind we swallow.
+    sent.create_thread.side_effect = discord.Forbidden(_MM(status=403), "missing perms")
 
     video = make_video_fn(video_id="abc", title="x")
-    # Must not raise — thread failure is non-fatal.
+    # Must not raise — Discord-side thread failure is non-fatal.
     await built_state.announce_video("abc", video)
 
     # The error went through report_error → log channel.
     fake_guild._log.send.assert_awaited()
     msg = fake_guild._log.send.await_args.args[0]
     assert "auto_thread" in msg
+
+
+async def test_announce_video_thread_unexpected_error_propagates(
+    built_state, make_video_fn, fake_guild
+):
+    """Non-Discord exceptions (programmer error) should NOT be swallowed."""
+    sent = fake_guild._announce.send.return_value
+    sent.create_thread.side_effect = AttributeError("buggy code")
+
+    video = make_video_fn(video_id="abc", title="x")
+    import pytest
+
+    with pytest.raises(AttributeError):
+        await built_state.announce_video("abc", video)
 
 
 async def test_announce_video_no_thread_when_disabled(
