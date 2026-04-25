@@ -116,3 +116,40 @@ def test_update_command_error_exits_one(monkeypatch, chdir_tmp):
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 1
     assert "Falhou" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# acelerado healthcheck
+# ---------------------------------------------------------------------------
+
+
+def test_healthcheck_missing_file_exits_one(chdir_tmp):
+    result = runner.invoke(app, ["healthcheck"])
+    assert result.exit_code == 1
+    assert "stale" in result.stdout.lower()
+
+
+def test_healthcheck_recent_tick_exits_zero(chdir_tmp):
+    from datetime import UTC, datetime
+
+    (chdir_tmp / "last_tick.txt").write_text(datetime.now(UTC).isoformat())
+    result = runner.invoke(app, ["healthcheck"])
+    assert result.exit_code == 0
+    assert "ok" in result.stdout.lower()
+
+
+def test_healthcheck_stale_exits_one(chdir_tmp):
+    from datetime import UTC, datetime, timedelta
+
+    stale = datetime.now(UTC) - timedelta(hours=2)
+    (chdir_tmp / "last_tick.txt").write_text(stale.isoformat())
+    result = runner.invoke(app, ["healthcheck", "--max-age", "60"])
+    assert result.exit_code == 1
+    assert "stale" in result.stdout.lower()
+
+
+def test_healthcheck_corrupted_file_exits_one(chdir_tmp):
+    (chdir_tmp / "last_tick.txt").write_text("not a date")
+    result = runner.invoke(app, ["healthcheck"])
+    assert result.exit_code == 1
+    assert "corromp" in result.stdout.lower() or "stale" in result.stdout.lower()

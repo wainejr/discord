@@ -5,6 +5,9 @@ credentials*
 token*
 discord
 published.txt
+last_tick.txt
+metrics.json
+metrics.json.tmp
 
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python

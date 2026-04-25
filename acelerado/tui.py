@@ -1,10 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from textual.app import App, ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Footer, Header, Static
 
-from acelerado import youtube
+from acelerado import metrics, youtube
 from acelerado.state import FILENAME_PUBLISHED
 
 
@@ -29,11 +29,35 @@ def _read_published() -> list[str]:
     return [line for line in FILENAME_PUBLISHED.read_text().splitlines() if line.strip()]
 
 
+def _render_metrics_panel() -> str:
+    m = metrics.load()
+
+    def line(label: str, entries):
+        total_24h = metrics.window_total(entries, timedelta(hours=24))
+        total_7d = metrics.window_total(entries, timedelta(days=7))
+        total_all = metrics.total(entries)
+        return f"  {label:<22} {total_24h:>4} (24h) · {total_7d:>4} (7d) · {total_all:>5} (total)"
+
+    last_tick_str = (
+        m.last_successful_tick.strftime("%Y-%m-%d %H:%M:%S")
+        if m.last_successful_tick is not None
+        else "— nunca"
+    )
+    return (
+        "[bold]Métricas[/]\n"
+        f"  Último tick OK:        {last_tick_str}\n"
+        f"{line('Vídeos anunciados', m.videos_announced)}\n"
+        f"{line('Membros sincronizados', m.members_synced)}\n"
+        f"{line('Erros reportados', m.errors)}"
+    )
+
+
 class MonitorApp(App):
     CSS = """
     Screen { layout: vertical; }
-    #token, #published { border: solid $accent; padding: 1 2; margin: 1 2; }
+    #token, #metrics, #published { border: solid $accent; padding: 1 2; margin: 1 2; }
     #token { height: 5; }
+    #metrics { height: 9; }
     #published { height: 1fr; }
     """
 
@@ -46,6 +70,7 @@ class MonitorApp(App):
         yield Header(show_clock=True)
         yield Vertical(
             Static(id="token"),
+            Static(id="metrics"),
             Static(id="published"),
         )
         yield Footer()
@@ -68,6 +93,8 @@ class MonitorApp(App):
             self.query_one("#token", Static).update(
                 f"[bold]YouTube OAuth token[/]\nExpires in: {_format_expiry(seconds, expiry)}"
             )
+
+        self.query_one("#metrics", Static).update(_render_metrics_panel())
 
         ids = _read_published()
         recent = ids[-15:][::-1]
