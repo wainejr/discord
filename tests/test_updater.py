@@ -69,6 +69,19 @@ def test_check_updates_with_pending_commits(mock_run, tmp_path: Path):
     assert len(result.commits) == 3
 
 
+def test_check_updates_timeout_is_reported_as_error(monkeypatch, tmp_path: Path):
+    """A hung git fetch should surface as status='error', not hang the bot."""
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> MagicMock:
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs.get("timeout", 60))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = updater.check_updates(repo=tmp_path)
+    assert result.status == "error"
+    assert "timed out" in result.message.lower()
+
+
 def test_check_updates_fetch_failure(mock_run, tmp_path: Path):
     mock_run.queue.append(_proc(1, stderr="network unreachable"))
     result = updater.check_updates(repo=tmp_path)
