@@ -393,6 +393,90 @@ async def test_report_error_increments_metric(built_state, chdir_tmp):
     assert any(e.context == "ctx_a" for e in loaded.errors)
 
 
+# ---------------------------------------------------------------------------
+# Upcoming livestream reminders
+# ---------------------------------------------------------------------------
+
+
+def _scheduled_video(make_video_fn, video_id: str, minutes_from_now: int):
+    """Build a video dict for a scheduled (not-yet-started) live."""
+    when = datetime.now(UTC) + timedelta(minutes=minutes_from_now)
+    video = make_video_fn(video_id=video_id, livestream=True)
+    video["liveStreamingDetails"] = {
+        "scheduledStartTime": when.isoformat().replace("+00:00", "Z"),
+    }
+    return video
+
+
+async def test_check_upcoming_lives_reminds_within_window(
+    built_state, fake_guild, monkeypatch, make_video_fn
+):
+    video = _scheduled_video(make_video_fn, "live1", minutes_from_now=10)
+    monkeypatch.setattr(yt_mod, "get_upcoming_livestream_ids", lambda max_results=5: ["live1"])
+    monkeypatch.setattr(yt_mod, "get_video_info", lambda vid: video)
+
+    await built_state._check_upcoming_lives()
+
+    fake_guild._announce.send.assert_awaited_once()
+    msg = fake_guild._announce.send.await_args.args[0]
+    assert "🔔" in msg
+    assert "live1" in msg or "watch?v=live1" in msg
+
+
+async def test_check_upcoming_lives_skips_outside_window(
+    built_state, fake_guild, monkeypatch, make_video_fn
+):
+    # 90 minutes away — outside default 15min window
+    video = _scheduled_video(make_video_fn, "live1", minutes_from_now=90)
+    monkeypatch.setattr(yt_mod, "get_upcoming_livestream_ids", lambda max_results=5: ["live1"])
+    monkeypatch.setattr(yt_mod, "get_video_info", lambda vid: video)
+
+    await built_state._check_upcoming_lives()
+    fake_guild._announce.send.assert_not_awaited()
+
+
+async def test_check_upcoming_lives_skips_past_start_time(
+    built_state, fake_guild, monkeypatch, make_video_fn
+):
+    video = _scheduled_video(make_video_fn, "live1", minutes_from_now=-5)
+    monkeypatch.setattr(yt_mod, "get_upcoming_livestream_ids", lambda max_results=5: ["live1"])
+    monkeypatch.setattr(yt_mod, "get_video_info", lambda vid: video)
+
+    await built_state._check_upcoming_lives()
+    fake_guild._announce.send.assert_not_awaited()
+
+
+async def test_check_upcoming_lives_dedups_across_ticks(
+    built_state, fake_guild, monkeypatch, make_video_fn, chdir_tmp
+):
+    video = _scheduled_video(make_video_fn, "live1", minutes_from_now=5)
+    monkeypatch.setattr(yt_mod, "get_upcoming_livestream_ids", lambda max_results=5: ["live1"])
+    monkeypatch.setattr(yt_mod, "get_video_info", lambda vid: video)
+
+    await built_state._check_upcoming_lives()
+    await built_state._check_upcoming_lives()  # second tick — should NOT remind again
+
+    assert fake_guild._announce.send.await_count == 1
+    # live_reminders.txt persists the dedup
+    from acelerado import state as state_mod
+
+    assert "live1" in state_mod.LIVE_REMINDERS_PATH.read_text()
+
+
+def test_should_announce_skips_scheduled_but_not_started(built_state, make_video_fn):
+    video = make_video_fn(livestream=True)
+    video["liveStreamingDetails"] = {"scheduledStartTime": "2099-01-01T00:00:00Z"}
+    assert built_state.should_announce_video(video) is False
+
+
+def test_should_announce_passes_for_started_live(built_state, make_video_fn):
+    video = make_video_fn(livestream=True)
+    video["liveStreamingDetails"] = {
+        "actualStartTime": "2026-04-25T19:00:00Z",
+    }
+    assert built_state.should_announce_video(video) is True
+
+
 async def test_event_loop_isolates_step_errors(built_state, monkeypatch):
     async def raising():
         raise RuntimeError("boom")

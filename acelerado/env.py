@@ -28,6 +28,10 @@ class EnvCfg(BaseSettings):
     # with an "admin not configured" warning.
     DISCORD_MODS_CHANNEL_ID: int = 0
 
+    # Minutes-before-start to send a "live em N min" reminder for scheduled
+    # YouTube lives. The reminder fires once per video.
+    ACELERADO_LIVE_REMINDER_MINUTES: int = 15
+
 
 @lru_cache(maxsize=1)
 def get_env() -> EnvCfg:
