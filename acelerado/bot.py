@@ -3,6 +3,7 @@ import logging
 import discord
 from discord.ext import commands, tasks
 
+from acelerado import welcome
 from acelerado.env import get_env
 from acelerado.slash import register_commands
 from acelerado.state import AceleradoState
@@ -42,6 +43,15 @@ class AceleradoBot(commands.Bot):
             )
         )
         logger.info("Updated presence!")
+
+    async def on_member_join(self, member: discord.Member) -> None:
+        try:
+            await welcome.handle_join(self, member)
+        except Exception as exc:
+            if self.state_handler is not None:
+                await self.state_handler.report_error("welcome", exc)
+            else:
+                logger.exception(f"welcome failed before state_handler ready: {exc}")
 
     async def on_error(self, event_method: str, /, *args, **kwargs) -> None:
         """Replace the default stderr dump with a proper log line.
