@@ -153,7 +153,11 @@ class AceleradoState:
         thread_name = title if len(title) <= 90 else title[:90] + "…"
         try:
             await message.create_thread(name=thread_name)
-        except Exception as exc:
+        except discord.HTTPException as exc:
+            # Forbidden (no perm), NotFound (msg gone), or other HTTP errors
+            # are expected and shouldn't bubble. Anything else (programmer
+            # error like AttributeError) deliberately escapes — the outer
+            # event_loop guard reports it.
             await self.report_error("auto_thread", exc)
 
     # ------------------------------------------------------------------
