@@ -33,6 +33,10 @@ class EnvCfg(BaseSettings):
     # implicitly allowed.
     ACELERADO_INVITE_WHITELIST: str = ""
 
+    # Minutes-before-start to send a "live em N min" reminder for scheduled
+    # YouTube lives. The reminder fires once per video.
+    ACELERADO_LIVE_REMINDER_MINUTES: int = 15
+
 
 @lru_cache(maxsize=1)
 def get_env() -> EnvCfg:

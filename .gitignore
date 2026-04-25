@@ -8,6 +8,7 @@ published.txt
 last_tick.txt
 metrics.json
 metrics.json.tmp
+live_reminders.txt
 
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python

@@ -51,6 +51,7 @@ uv sync
    | `DISCORD_WELCOME_CHANNEL_ID`    | (opcional) Canal pra mensagem de boas-vindas. Se `0`/vazio, tenta DM. |
    | `DISCORD_MODS_CHANNEL_ID`       | (opcional) Canal privado de mods. Recebe `/report` e logs de bloqueios anti-spam. |
    | `ACELERADO_INVITE_WHITELIST`    | (opcional) Lista de guild IDs (separados por vírgula) cujos convites NÃO são bloqueados. |
+   | `ACELERADO_LIVE_REMINDER_MINUTES`| (opcional) Quantos minutos antes do início de uma live agendada o bot avisa. Default `15`. |
 
 2. **Credenciais OAuth do Google** — copie o exemplo e substitua pelos valores da sua app:
 

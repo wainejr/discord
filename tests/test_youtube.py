@@ -161,6 +161,63 @@ def test_time_to_expire_is_positive_for_future_token(token_future):
     assert 29 * 86400 < seconds < 31 * 86400
 
 
+# ---------------------------------------------------------------------------
+# Upcoming livestreams
+# ---------------------------------------------------------------------------
+
+
+def test_is_live_now_distinguishes_scheduled_from_actual(make_video_fn):
+    scheduled = make_video_fn(livestream=True)
+    # default fixture sets actualStartTime; remove to simulate "scheduled"
+    scheduled["liveStreamingDetails"] = {"scheduledStartTime": "2026-04-25T19:00:00Z"}
+    assert youtube.is_livestream(scheduled) is True
+    assert youtube.is_live_now(scheduled) is False
+
+    live = make_video_fn(livestream=True)
+    live["liveStreamingDetails"] = {
+        "actualStartTime": "2026-04-25T19:00:00Z",
+        "scheduledStartTime": "2026-04-25T19:00:00Z",
+    }
+    assert youtube.is_live_now(live) is True
+
+
+def test_is_live_now_false_when_ended(make_video_fn):
+    video = make_video_fn(livestream=True)
+    video["liveStreamingDetails"] = {
+        "actualStartTime": "2026-04-25T19:00:00Z",
+        "actualEndTime": "2026-04-25T20:00:00Z",
+    }
+    assert youtube.is_live_now(video) is False
+
+
+def test_get_scheduled_start_time_parses_z_suffix(make_video_fn):
+    video = make_video_fn(livestream=True)
+    video["liveStreamingDetails"] = {"scheduledStartTime": "2026-04-25T19:00:00Z"}
+    parsed = youtube.get_scheduled_start_time(video)
+    assert parsed is not None
+    assert parsed.tzinfo is not None
+    assert parsed.year == 2026 and parsed.month == 4 and parsed.day == 25
+
+
+def test_get_scheduled_start_time_returns_none_when_missing(make_video_fn):
+    assert youtube.get_scheduled_start_time(make_video_fn()) is None
+
+
+def test_get_upcoming_livestream_ids(monkeypatch):
+    client = _fake_youtube_client()
+    client.search.return_value.list.return_value.execute.return_value = {
+        "items": [
+            {"id": {"videoId": "live1", "kind": "youtube#video"}},
+            {"id": {"videoId": "live2", "kind": "youtube#video"}},
+            {"id": {"kind": "youtube#channel"}},  # malformed entry — skipped
+        ]
+    }
+    monkeypatch.setattr(youtube, "_youtube", lambda: client)
+
+    ids = youtube.get_upcoming_livestream_ids()
+    assert ids == ["live1", "live2"]
+
+
 def test_time_to_expire_negative_for_past_token(write_token):
     write_token(datetime.now(UTC) - timedelta(days=1))
     seconds = youtube.get_token_time_to_expire()
