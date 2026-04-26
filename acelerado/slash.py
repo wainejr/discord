@@ -31,7 +31,7 @@ LINKS: dict[str, str] = {
 
 @app_commands.command(
     name="links",
-    description="Mostra os links importantes da comunidade do Waine",
+    description="Mostra os links importantes da Comunidade do Desempenho",
 )
 async def cmd_links(interaction: discord.Interaction) -> None:
     embed = discord.Embed(
