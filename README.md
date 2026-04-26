@@ -49,8 +49,7 @@ uv sync
    | `ACELERADO_LOG_LEVEL`           | (opcional) `DEBUG`/`INFO`/`WARNING`/…           |
    | `ACELERADO_AUTO_THREAD`         | (opcional) Auto-cria thread no anúncio de vídeo, default `true` |
    | `DISCORD_WELCOME_CHANNEL_ID`    | (opcional) Canal pra mensagem de boas-vindas. Se `0`/vazio, tenta DM. |
-   | `DISCORD_MODS_CHANNEL_ID`       | (opcional) Canal privado de mods. Recebe `/report` e logs de bloqueios anti-spam. |
-   | `ACELERADO_INVITE_WHITELIST`    | (opcional) Lista de guild IDs (separados por vírgula) cujos convites NÃO são bloqueados. |
+   | `DISCORD_MODS_CHANNEL_ID`       | (opcional) Canal privado de mods. Recebe `/report`. |
 
 2. **Credenciais OAuth do Google** — copie o exemplo e substitua pelos valores da sua app:
 
