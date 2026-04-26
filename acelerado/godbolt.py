@@ -24,7 +24,11 @@ class _Lang:
     compiler: str  # Godbolt's compiler id
 
 
-# Edit here to add languages or update compilers.
+# Edit here to add languages or update compilers. Compiler IDs come from
+# Godbolt — go to https://godbolt.org, pick the language + compiler,
+# inspect the URL: ``/api/compilers/<lang>`` lists the IDs. They rotate
+# as new versions ship; if a link stops opening the right compiler,
+# update the ``compiler`` field below.
 LANGUAGES: dict[str, _Lang] = {
     "c": _Lang(display="C", api_key="c", compiler="cg132"),
     "c++": _Lang(display="C++", api_key="c++", compiler="g132"),
@@ -32,6 +36,12 @@ LANGUAGES: dict[str, _Lang] = {
     "rust": _Lang(display="Rust", api_key="rust", compiler="r1830"),
     "zig": _Lang(display="Zig", api_key="zig", compiler="z0140"),
     "go": _Lang(display="Go", api_key="go", compiler="gccgo132"),
+    "python": _Lang(display="Python", api_key="python", compiler="python313"),
+    "javascript": _Lang(display="JavaScript", api_key="javascript", compiler="v8node2210"),
+    "js": _Lang(display="JavaScript (alias js)", api_key="javascript", compiler="v8node2210"),
+    "java": _Lang(display="Java", api_key="java", compiler="java2200"),
+    "haskell": _Lang(display="Haskell", api_key="haskell", compiler="ghc984"),
+    "odin": _Lang(display="Odin", api_key="odin", compiler="odintrunk"),
 }
 
 
