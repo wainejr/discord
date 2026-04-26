@@ -153,3 +153,69 @@ def test_healthcheck_corrupted_file_exits_one(chdir_tmp):
     result = runner.invoke(app, ["healthcheck"])
     assert result.exit_code == 1
     assert "corromp" in result.stdout.lower() or "stale" in result.stdout.lower()
+
+
+# ---------------------------------------------------------------------------
+# acelerado config
+# ---------------------------------------------------------------------------
+
+
+def test_config_list_shows_keys_and_origins(chdir_tmp):
+    result = runner.invoke(app, ["config", "list"])
+    assert result.exit_code == 0
+    assert "ACELERADO_TICK_SECONDS" in result.stdout
+    assert "DISCORD_TOKEN" in result.stdout
+
+
+def test_config_list_redacts_secrets(chdir_tmp):
+    result = runner.invoke(app, ["config", "list"])
+    assert "test-discord-token" not in result.stdout
+
+
+def test_config_get_known_key(chdir_tmp):
+    result = runner.invoke(app, ["config", "get", "ACELERADO_TICK_SECONDS"])
+    assert result.exit_code == 0
+    assert "300" in result.stdout
+
+
+def test_config_get_unknown_key_exits_one(chdir_tmp):
+    result = runner.invoke(app, ["config", "get", "NOT_A_KEY"])
+    assert result.exit_code == 1
+    assert "unknown" in result.stdout.lower()
+
+
+def test_config_set_persists_and_get_reflects_it(chdir_tmp):
+    set_result = runner.invoke(app, ["config", "set", "ACELERADO_TICK_SECONDS", "120"])
+    assert set_result.exit_code == 0, set_result.stdout
+    assert "config.json" in set_result.stdout
+
+    get_result = runner.invoke(app, ["config", "get", "ACELERADO_TICK_SECONDS"])
+    assert get_result.exit_code == 0
+    assert "120" in get_result.stdout
+    assert "config.json" in get_result.stdout
+
+
+def test_config_set_invalid_value_exits_one(chdir_tmp):
+    result = runner.invoke(app, ["config", "set", "ACELERADO_TICK_SECONDS", "not-int"])
+    assert result.exit_code == 1
+    assert "validation" in result.stdout.lower()
+
+
+def test_config_set_secret_blocked(chdir_tmp):
+    result = runner.invoke(app, ["config", "set", "DISCORD_TOKEN", "leak"])
+    assert result.exit_code == 1
+    assert "secret" in result.stdout.lower()
+
+
+def test_config_unset_returns_to_fallback(chdir_tmp):
+    runner.invoke(app, ["config", "set", "ACELERADO_TICK_SECONDS", "120"])
+    unset_result = runner.invoke(app, ["config", "unset", "ACELERADO_TICK_SECONDS"])
+    assert unset_result.exit_code == 0
+    get_result = runner.invoke(app, ["config", "get", "ACELERADO_TICK_SECONDS"])
+    # Reverts to env (test fixture doesn't set it -> default 300)
+    assert "300" in get_result.stdout
+
+
+def test_config_unset_unknown_key_exits_one(chdir_tmp):
+    result = runner.invoke(app, ["config", "unset", "NOT_A_KEY"])
+    assert result.exit_code == 1

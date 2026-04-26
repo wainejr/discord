@@ -1,4 +1,12 @@
-from functools import lru_cache
+"""Schema for all bot configuration.
+
+``EnvCfg`` is the single pydantic-settings model — it reads ``.env`` /
+process env. The runtime layering (``config.json`` overrides on top of
+this) lives in :mod:`acelerado.config`. Most callers should keep using
+:func:`get_env`, which proxies through to the merged ``Settings.cfg``.
+"""
+
+from __future__ import annotations
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -42,6 +50,31 @@ class EnvCfg(BaseSettings):
     ACELERADO_APOIADORES_WHITELIST: str = "eniaw"
 
 
-@lru_cache(maxsize=1)
 def get_env() -> EnvCfg:
-    return EnvCfg()
+    """Return the merged :class:`EnvCfg`, with ``config.json`` applied on top.
+
+    Thin wrapper over :func:`acelerado.config.get_settings` kept for
+    backward compatibility — every call site does ``get_env().FOO`` and
+    we don't want to thrash that whole graph just to add a new layer.
+    """
+    from acelerado.config import get_settings
+
+    return get_settings().cfg
+
+
+def _cache_clear() -> None:
+    """Compatibility shim for tests that used to call ``get_env.cache_clear()``.
+
+    Delegates to :func:`acelerado.config.reload_settings` so monkeypatched
+    env vars or freshly-written ``config.json`` files take effect on the
+    next access.
+    """
+    from acelerado.config import reload_settings
+
+    reload_settings()
+
+
+# Tests call ``env_mod.get_env.cache_clear()`` to reset state between cases.
+# Preserve that surface by attaching a callable attribute to the function
+# (mirrors the ``functools.lru_cache`` API the previous version exposed).
+get_env.cache_clear = _cache_clear  # type: ignore[attr-defined]

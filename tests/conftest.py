@@ -42,11 +42,11 @@ def chdir_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture(autouse=True)
 def clear_caches() -> None:
     """Reset lru_cache-backed singletons so tests don't leak state."""
-    from acelerado import env as env_mod
+    from acelerado import config as config_mod
     from acelerado import metrics as metrics_mod
     from acelerado import youtube as yt_mod
 
-    env_mod.get_env.cache_clear()
+    config_mod.reload_settings()
     yt_mod._youtube.cache_clear()
     yt_mod.get_upload_playlist_id.cache_clear()
     metrics_mod.reset_cache()

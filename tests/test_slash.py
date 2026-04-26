@@ -285,6 +285,103 @@ async def test_report_invalid_link_responds_with_warning():
     assert "inválido" in msg.lower()
 
 
+# ---------------------------------------------------------------------------
+# /config group
+# ---------------------------------------------------------------------------
+
+
+def test_register_config_group():
+    tree = _build_tree()
+    guild = discord.Object(id=1)
+    register_commands(tree, guild=guild)
+    cmd = tree.get_command("config", guild=guild)
+    assert cmd is not None
+    assert isinstance(cmd, app_commands.Group)
+    sub_names = {c.name for c in cmd.commands}
+    assert sub_names == {"list", "set-channel", "set", "unset"}
+
+
+def _get_config_subcommand(name: str):
+    tree = _build_tree()
+    guild = discord.Object(id=1)
+    register_commands(tree, guild=guild)
+    group = tree.get_command("config", guild=guild)
+    assert isinstance(group, app_commands.Group)
+    for cmd in group.commands:
+        if cmd.name == name:
+            return cmd
+    raise AssertionError(f"subcommand {name!r} not registered")
+
+
+def _make_admin_interaction():
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.response = MagicMock()
+    interaction.response.send_message = AsyncMock()
+    return interaction
+
+
+async def test_config_list_renders_embed(chdir_tmp):
+    cmd = _get_config_subcommand("list")
+    interaction = _make_admin_interaction()
+    await cmd.callback(interaction)
+    interaction.response.send_message.assert_awaited_once()
+    embed = interaction.response.send_message.await_args.kwargs.get("embed")
+    assert isinstance(embed, discord.Embed)
+    field_names = {f.name for f in embed.fields}
+    assert "ACELERADO_TICK_SECONDS" in field_names
+    # Secret redaction
+    rendered = " ".join(f.value or "" for f in embed.fields)
+    assert "test-discord-token" not in rendered
+
+
+async def test_config_set_channel_persists_id(chdir_tmp):
+    from acelerado.config import get_settings, reload_settings
+
+    reload_settings()
+    cmd = _get_config_subcommand("set-channel")
+    interaction = _make_admin_interaction()
+
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = 555_666_777
+    choice = app_commands.Choice(name="welcome", value="DISCORD_WELCOME_CHANNEL_ID")
+
+    await cmd.callback(interaction, key=choice, channel=channel)
+
+    interaction.response.send_message.assert_awaited_once()
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "555666777" in msg.replace(",", "")
+    # Persisted to Settings
+    assert get_settings().cfg.DISCORD_WELCOME_CHANNEL_ID == 555_666_777
+
+
+async def test_config_set_invalid_value_responds_with_warning(chdir_tmp):
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    cmd = _get_config_subcommand("set")
+    interaction = _make_admin_interaction()
+
+    choice = app_commands.Choice(name="tick-seconds", value="ACELERADO_TICK_SECONDS")
+    await cmd.callback(interaction, key=choice, value="not-an-int")
+
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "inválido" in msg.lower()
+
+
+async def test_config_unset_reverts_to_fallback(chdir_tmp):
+    from acelerado.config import get_settings, reload_settings
+
+    reload_settings()
+    get_settings().set("ACELERADO_TICK_SECONDS", 99)
+    cmd = _get_config_subcommand("unset")
+    interaction = _make_admin_interaction()
+    choice = app_commands.Choice(name="tick-seconds", value="ACELERADO_TICK_SECONDS")
+
+    await cmd.callback(interaction, key=choice)
+    interaction.response.send_message.assert_awaited_once()
+    assert get_settings().cfg.ACELERADO_TICK_SECONDS == 300  # back to default
+
+
 async def test_update_command_ok_schedules_restart(monkeypatch):
     import asyncio
 

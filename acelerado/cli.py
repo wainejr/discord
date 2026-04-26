@@ -184,6 +184,94 @@ def healthcheck(
     console.print(f"[green]✅ ok:[/] último tick há [bold]{int(age)}s[/] (limite {max_age}s)")
 
 
+config_app = typer.Typer(
+    name="config",
+    help="Inspect and edit runtime configuration (config.json overlay).",
+    no_args_is_help=True,
+)
+app.add_typer(config_app, name="config")
+
+
+@config_app.command("list")
+def config_list() -> None:
+    """Show every config key with its effective value and origin."""
+    from acelerado.config import get_settings
+
+    settings = get_settings()
+    table = Table(title="Acelerado config")
+    table.add_column("Key")
+    table.add_column("Value")
+    table.add_column("Origin", style="dim")
+    for key in settings.all_keys():
+        table.add_row(key, settings.display_value(key), settings.origin(key))
+    console.print(table)
+
+
+@config_app.command("get")
+def config_get(key: str) -> None:
+    """Print one key's value + origin."""
+    from acelerado.config import get_settings
+    from acelerado.env import EnvCfg
+
+    if key not in EnvCfg.model_fields:
+        console.print(f"[red]Unknown key:[/] {key}")
+        raise typer.Exit(code=1)
+    settings = get_settings()
+    console.print(
+        f"[bold]{key}[/] = {settings.display_value(key)} [dim](from {settings.origin(key)})[/]"
+    )
+
+
+@config_app.command("set")
+def config_set(key: str, value: str) -> None:
+    """Persist ``key=value`` to config.json (validates type via pydantic)."""
+    from acelerado.config import get_settings
+
+    settings = get_settings()
+    try:
+        coerced = settings.set(key, value)
+    except KeyError:
+        console.print(f"[red]Unknown key:[/] {key}")
+        raise typer.Exit(code=1) from None
+    except PermissionError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from None
+    except ValueError as exc:
+        console.print(f"[red]Validation error:[/]\n{exc}")
+        raise typer.Exit(code=1) from None
+    console.print(f"[green]✅[/] {key} = {coerced!r} [dim](written to config.json)[/]")
+
+
+@config_app.command("unset")
+def config_unset(key: str) -> None:
+    """Remove a key from config.json (falls back to .env / default)."""
+    from acelerado.config import get_settings
+
+    settings = get_settings()
+    try:
+        settings.unset(key)
+    except KeyError:
+        console.print(f"[red]Unknown key:[/] {key}")
+        raise typer.Exit(code=1) from None
+    console.print(f"[green]✅[/] {key} unset — now reads from [bold]{settings.origin(key)}[/]")
+
+
+@config_app.command("edit")
+def config_edit() -> None:
+    """Open config.json in $EDITOR (defaults to vi); reload after exit."""
+    import os
+    import subprocess
+
+    from acelerado.config import CONFIG_PATH, reload_settings
+
+    editor = os.environ.get("EDITOR", "vi")
+    if not CONFIG_PATH.exists():
+        CONFIG_PATH.write_text("{}\n", encoding="utf-8")
+    subprocess.call([editor, str(CONFIG_PATH)])
+    reload_settings()
+    console.print(f"[green]✅[/] reloaded from {CONFIG_PATH}")
+
+
 @app.command()
 def update() -> None:
     """Pull latest commits and re-sync deps. Exit code 75 on success → wrapper restarts."""

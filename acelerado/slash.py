@@ -241,6 +241,128 @@ async def cmd_report(
     await interaction.followup.send(result_msg, ephemeral=True)
 
 
+# ---------------------------------------------------------------------------
+# /config — runtime configuration overlay (issue #30)
+# ---------------------------------------------------------------------------
+#
+# Built as an ``app_commands.Group`` so the surface is ``/config list``,
+# ``/config set-channel``, etc., instead of ``cmd_config_list`` style. The
+# group instance must be re-created per registration call (discord.py
+# binds it to a tree at add time and barfs on re-registration), so it
+# lives inside :func:`_build_config_group` rather than at module scope.
+
+_CHANNEL_KEY_CHOICES = [
+    app_commands.Choice(name="announce", value="DISCORD_ANNOUNCE_CHANNEL_ID"),
+    app_commands.Choice(name="log", value="DISCORD_LOG_CHANNEL_ID"),
+    app_commands.Choice(name="welcome", value="DISCORD_WELCOME_CHANNEL_ID"),
+    app_commands.Choice(name="mods", value="DISCORD_MODS_CHANNEL_ID"),
+    app_commands.Choice(name="review", value="DISCORD_REVIEW_CHANNEL_ID"),
+]
+
+# Non-channel, non-secret editable keys exposed via /config set + unset.
+_PLAIN_KEY_CHOICES = [
+    app_commands.Choice(name="tick-seconds", value="ACELERADO_TICK_SECONDS"),
+    app_commands.Choice(name="auto-thread", value="ACELERADO_AUTO_THREAD"),
+    app_commands.Choice(name="live-reminder-min", value="ACELERADO_LIVE_REMINDER_MINUTES"),
+    app_commands.Choice(name="apoiadores-whitelist", value="ACELERADO_APOIADORES_WHITELIST"),
+]
+
+# Union for /config unset (covers every editable key).
+_UNSET_KEY_CHOICES = _CHANNEL_KEY_CHOICES + _PLAIN_KEY_CHOICES
+
+
+def _build_config_group() -> app_commands.Group:
+    """Build a fresh ``/config`` group bound to a single tree."""
+    from acelerado.config import get_settings
+
+    group = app_commands.Group(
+        name="config",
+        description="Inspecionar/editar config runtime do bot",
+        default_permissions=discord.Permissions(administrator=True),
+    )
+
+    @group.command(name="list", description="Mostra config atual + origem")
+    async def cmd_config_list(interaction: discord.Interaction) -> None:
+        settings = get_settings()
+        embed = discord.Embed(
+            title="⚙️ Config atual",
+            color=discord.Color.blurple(),
+        )
+        for key in settings.all_keys():
+            embed.add_field(
+                name=key,
+                value=f"`{settings.display_value(key)}` *(de {settings.origin(key)})*",
+                inline=False,
+            )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @group.command(
+        name="set-channel",
+        description="Aponta uma config-canal pro canal escolhido (resolve ID automaticamente)",
+    )
+    @app_commands.describe(key="Qual canal configurar", channel="Canal alvo")
+    @app_commands.choices(key=_CHANNEL_KEY_CHOICES)
+    async def cmd_config_set_channel(
+        interaction: discord.Interaction,
+        key: app_commands.Choice[str],
+        channel: discord.TextChannel,
+    ) -> None:
+        try:
+            get_settings().set(key.value, channel.id)
+        except (KeyError, PermissionError, ValueError) as exc:
+            await interaction.response.send_message(f"⚠️ {exc}", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"✅ `{key.value}` = <#{channel.id}>", ephemeral=True
+        )
+
+    @group.command(
+        name="set",
+        description="Define uma config não-canal (int, bool, string)",
+    )
+    @app_commands.describe(key="Qual config", value="Valor (será coerced via pydantic)")
+    @app_commands.choices(key=_PLAIN_KEY_CHOICES)
+    async def cmd_config_set(
+        interaction: discord.Interaction,
+        key: app_commands.Choice[str],
+        value: str,
+    ) -> None:
+        try:
+            coerced = get_settings().set(key.value, value)
+        except (KeyError, PermissionError) as exc:
+            await interaction.response.send_message(f"⚠️ {exc}", ephemeral=True)
+            return
+        except ValueError as exc:
+            await interaction.response.send_message(
+                f"⚠️ Valor inválido para `{key.value}`:\n```\n{str(exc)[:500]}\n```",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(f"✅ `{key.value}` = `{coerced!r}`", ephemeral=True)
+
+    @group.command(
+        name="unset",
+        description="Remove um override (volta pro fallback .env / default)",
+    )
+    @app_commands.choices(key=_UNSET_KEY_CHOICES)
+    async def cmd_config_unset(
+        interaction: discord.Interaction,
+        key: app_commands.Choice[str],
+    ) -> None:
+        settings = get_settings()
+        try:
+            settings.unset(key.value)
+        except KeyError as exc:
+            await interaction.response.send_message(f"⚠️ {exc}", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"✅ `{key.value}` removido — agora vem de `{settings.origin(key.value)}`",
+            ephemeral=True,
+        )
+
+    return group
+
+
 def register_commands(
     tree: app_commands.CommandTree,
     guild: discord.abc.Snowflake | None = None,
@@ -259,3 +381,4 @@ def register_commands(
     tree.add_command(cmd_preview_summary, guild=guild)
     tree.add_command(cmd_preview_stale, guild=guild)
     tree.add_command(cmd_godbolt, guild=guild)
+    tree.add_command(_build_config_group(), guild=guild)
