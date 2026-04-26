@@ -142,6 +142,7 @@ uv run acelerado --help
 | `acelerado update`            | Faz `git pull --ff-only` + `uv sync --frozen`. Sai com exit 75 se atualizou; o wrapper externo deve restartar. |
 | `acelerado healthcheck [--max-age N]` | Lê `last_tick.txt` e retorna exit 0 (ok) ou 1 (stale/missing). Default `--max-age` = 2× tick interval. Útil em cron. |
 | `acelerado config list / get / set / unset / edit` | Inspeciona ou edita o overlay de configuração runtime (`config.json`). Veja "Configuração runtime" abaixo. |
+| `acelerado channels [--all]` | Conecta no gateway, lista os canais do servidor (id + nome + categoria) e marca quais estão ligados em qual key de `config.json`. Útil pra prep de `config set` via SSH sem abrir o Discord. |
 
 ### Configuração runtime — `config.json` e `/config`
 
@@ -164,10 +165,13 @@ A partir do issue #30, IDs de canal e ajustes não-secretos podem ser editados e
 
 ```sh
 uv run acelerado config list
+uv run acelerado channels                              # lista canais do server (com IDs)
 uv run acelerado config set DISCORD_WELCOME_CHANNEL_ID 123456789
 uv run acelerado config unset ACELERADO_TICK_SECONDS
 uv run acelerado config edit          # abre $EDITOR no config.json
 ```
+
+`/config list` no Discord renderiza IDs de canal como menções clicáveis (`<#id>`) — assim você vê na hora pra que canal cada binding está apontando.
 
 Mudanças via `/config` ou `acelerado config set` aplicam **imediatamente** ao próximo tick / próxima slash interaction. Exceção: `ACELERADO_TICK_SECONDS` é lido uma vez em `setup_hook` — alterar exige restart.
 

@@ -283,15 +283,24 @@ def _build_config_group() -> app_commands.Group:
 
     @group.command(name="list", description="Mostra config atual + origem")
     async def cmd_config_list(interaction: discord.Interaction) -> None:
+        from acelerado.config import CHANNEL_KEYS
+
         settings = get_settings()
         embed = discord.Embed(
             title="⚙️ Config atual",
             color=discord.Color.blurple(),
         )
         for key in settings.all_keys():
+            # Channel-typed keys: render as <#id> so the ID resolves to a
+            # clickable mention; bare ints aren't actionable.
+            if key in CHANNEL_KEYS:
+                cid = getattr(settings.cfg, key)
+                rendered = f"<#{cid}>" if cid else "*(não configurado)*"
+            else:
+                rendered = f"`{settings.display_value(key)}`"
             embed.add_field(
                 name=key,
-                value=f"`{settings.display_value(key)}` *(de {settings.origin(key)})*",
+                value=f"{rendered} *(de {settings.origin(key)})*",
                 inline=False,
             )
         await interaction.response.send_message(embed=embed, ephemeral=True)

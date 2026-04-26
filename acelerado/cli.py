@@ -96,6 +96,79 @@ def audit_members() -> None:
     bot.run(get_env().DISCORD_TOKEN, log_handler=None)
 
 
+@app.command(name="channels")
+def channels(
+    text_only: Annotated[
+        bool,
+        typer.Option(
+            "--text-only/--all",
+            help="Mostra só canais de texto (default) ou todos os tipos.",
+        ),
+    ] = True,
+) -> None:
+    """List Discord channels in the configured guild — id + name + category.
+
+    Useful when prepping a `config set` from the CLI (e.g. via SSH) and you
+    don't have Discord open. Connects to the gateway, dumps the table, and
+    closes — no long-running bot.
+    """
+    import discord
+    from discord.ext import commands
+
+    from acelerado.config import CHANNEL_KEYS, get_settings
+    from acelerado.env import get_env
+
+    settings = get_settings()
+    bound: dict[int, list[str]] = {}
+    for key in CHANNEL_KEYS:
+        value = getattr(settings.cfg, key)
+        if value:
+            bound.setdefault(value, []).append(key)
+
+    intents = discord.Intents.default()
+    bot = commands.Bot(command_prefix="/", intents=intents)
+
+    @bot.event
+    async def on_ready() -> None:
+        try:
+            guild = bot.get_guild(get_env().DISCORD_GUILD_ID)
+            if guild is None:
+                logger.error("Guild not found. Check DISCORD_GUILD_ID.")
+                return
+
+            table = Table(title=f"Canais em '{guild.name}'")
+            table.add_column("Tipo")
+            table.add_column("Nome")
+            table.add_column("ID", style="dim")
+            table.add_column("Categoria", style="dim")
+            table.add_column("Bound to", style="cyan")
+
+            channels_iter = sorted(
+                guild.channels,
+                key=lambda c: (
+                    (c.category.position if c.category else -1),
+                    getattr(c, "position", 0),
+                ),
+            )
+            for chan in channels_iter:
+                if text_only and not isinstance(chan, discord.TextChannel):
+                    continue
+                bound_keys = ", ".join(bound.get(chan.id, [])) or "—"
+                category = chan.category.name if chan.category else "—"
+                table.add_row(
+                    type(chan).__name__.removesuffix("Channel").lower(),
+                    chan.name,
+                    str(chan.id),
+                    category,
+                    bound_keys,
+                )
+            console.print(table)
+        finally:
+            await bot.close()
+
+    bot.run(get_env().DISCORD_TOKEN, log_handler=None)
+
+
 @app.command(name="refresh-token")
 def refresh_token() -> None:
     """Force a fresh YouTube OAuth flow (backs up the existing token)."""

@@ -334,6 +334,31 @@ async def test_config_list_renders_embed(chdir_tmp):
     assert "test-discord-token" not in rendered
 
 
+async def test_config_list_renders_channel_keys_as_mentions(chdir_tmp):
+    """Channel-typed keys must render as <#id> so they're clickable."""
+    cmd = _get_config_subcommand("list")
+    interaction = _make_admin_interaction()
+    await cmd.callback(interaction)
+    embed = interaction.response.send_message.await_args.kwargs.get("embed")
+    fields = {f.name: (f.value or "") for f in embed.fields}
+    # Test fixture sets DISCORD_ANNOUNCE_CHANNEL_ID=222 — should render <#222>.
+    assert "<#222>" in fields["DISCORD_ANNOUNCE_CHANNEL_ID"]
+    assert "<#333>" in fields["DISCORD_LOG_CHANNEL_ID"]
+
+
+async def test_config_list_marks_unset_channels(chdir_tmp):
+    """Channel keys defaulting to 0 should show 'não configurado', not <#0>."""
+    cmd = _get_config_subcommand("list")
+    interaction = _make_admin_interaction()
+    await cmd.callback(interaction)
+    embed = interaction.response.send_message.await_args.kwargs.get("embed")
+    fields = {f.name: (f.value or "") for f in embed.fields}
+    # DISCORD_WELCOME_CHANNEL_ID has no fixture override -> defaults to 0.
+    welcome = fields["DISCORD_WELCOME_CHANNEL_ID"]
+    assert "<#0>" not in welcome
+    assert "não configurado" in welcome
+
+
 async def test_config_set_channel_persists_id(chdir_tmp):
     from acelerado.config import get_settings, reload_settings
 

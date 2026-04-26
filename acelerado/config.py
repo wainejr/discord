@@ -42,6 +42,19 @@ ENV_FILE_PATH = Path(".env")
 # would leak secrets into a file that's easy to accidentally commit.
 SECRET_KEYS: frozenset[str] = frozenset({"DISCORD_TOKEN", "YOUTUBE_API_KEY"})
 
+# Keys whose value is a Discord channel ID. Used by renderers (slash,
+# CLI) to format the value as ``<#id>`` (clickable mention) instead of a
+# bare int. Update this set when a new channel-shaped key is added.
+CHANNEL_KEYS: frozenset[str] = frozenset(
+    {
+        "DISCORD_ANNOUNCE_CHANNEL_ID",
+        "DISCORD_LOG_CHANNEL_ID",
+        "DISCORD_WELCOME_CHANNEL_ID",
+        "DISCORD_MODS_CHANNEL_ID",
+        "DISCORD_REVIEW_CHANNEL_ID",
+    }
+)
+
 
 def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
