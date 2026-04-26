@@ -143,7 +143,7 @@ _MESSAGE_LINK_RE = re.compile(r"https?://(?:\w+\.)?discord\.com/channels/(\d+)/(
     description="Gera link do Compiler Explorer com seu código",
 )
 @app_commands.describe(
-    language="Linguagem do código (c, c++, rust, zig, go)",
+    language="Linguagem do código",
     code="Código (até ~3000 chars)",
 )
 @app_commands.choices(
@@ -153,6 +153,11 @@ _MESSAGE_LINK_RE = re.compile(r"https?://(?:\w+\.)?discord\.com/channels/(\d+)/(
         app_commands.Choice(name="Rust", value="rust"),
         app_commands.Choice(name="Zig", value="zig"),
         app_commands.Choice(name="Go", value="go"),
+        app_commands.Choice(name="Python", value="python"),
+        app_commands.Choice(name="JavaScript", value="javascript"),
+        app_commands.Choice(name="Java", value="java"),
+        app_commands.Choice(name="Haskell", value="haskell"),
+        app_commands.Choice(name="Odin", value="odin"),
     ]
 )
 async def cmd_godbolt(
