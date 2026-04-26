@@ -117,32 +117,29 @@ uv run acelerado run
 # tmux attach -t acelerado pra reanexar depois
 ```
 
-### Restart automático
+### Restart automático — `scripts/run.sh`
 
-Pra reiniciar automaticamente em caso de crash **ou** após `acelerado update` / `/update`, use um wrapper de loop:
-
-```sh
-while true; do uv run acelerado run; sleep 5; done
-```
-
-Ou, dentro do tmux:
+Pra reiniciar automaticamente em caso de crash **ou** após `acelerado update` / `/update`, use o supervisor incluso:
 
 ```sh
-tmux new -s acelerado 'while true; do uv run acelerado run; sleep 5; done'
+bash scripts/run.sh
 ```
 
-O bot sai com exit code **75** quando se atualiza com sucesso (convenção `EX_TEMPFAIL` do Unix). O loop acima não distingue exit codes — só restarta. Se quiser tratar exit 75 como "restart pedido" e qualquer outro como "crash com cooldown maior":
+Ou, recomendado, dentro de tmux:
 
 ```sh
-while true; do
-  uv run acelerado run
-  code=$?
-  case "$code" in
-    75) echo "[restart pedido pelo bot]"; sleep 1 ;;
-    *)  echo "[crash exit=$code]"; sleep 5 ;;
-  esac
-done
+tmux new -s acelerado 'bash scripts/run.sh'
+# Ctrl+B, D pra desanexar / tmux attach -t acelerado pra reanexar
 ```
+
+O script:
+
+- Restarta o bot quando ele sai com exit **75** (`EX_TEMPFAIL` — `acelerado update` ou `/update` pediu restart).
+- Restarta com **backoff exponencial** (2s → 4s → … → cap 60s) em caso de crash (exit ≠ 0/130/143). Evita loop tight de restart se o bot tiver bug fatal.
+- **Encerra o loop** com exit 0 (shutdown limpo via Ctrl+C → 130) ou em SIGTERM (143).
+- Loga cada evento com timestamp.
+
+Se quiser inspecionar o que o script faz, é tudo bash puro em `scripts/run.sh` (~30 linhas).
 
 Pra copiar um `token.pickle` renovado pra uma máquina remota (ex.: Raspberry Pi), há o utilitário `scripts/send_token.sh` (ajuste o host `home_rasp` pro seu `~/.ssh/config`).
 
