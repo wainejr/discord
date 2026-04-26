@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import commands, tasks
 
-from acelerado import review, welcome
+from acelerado import antispam, review, welcome
 from acelerado.env import get_env
 from acelerado.slash import register_commands
 from acelerado.state import AceleradoState
@@ -52,6 +52,22 @@ class AceleradoBot(commands.Bot):
             )
         )
         logger.info("Updated presence!")
+
+    async def on_message(self, message: discord.Message) -> None:
+        # Anti-spam tracking (issue #31). Disabled by default — flip
+        # ACELERADO_ANTISPAM_ENABLED on once you've validated the
+        # alerts on your server. The handler itself is fail-proof; we
+        # still wrap it so a bug here can't kill on_message dispatch.
+        if get_env().ACELERADO_ANTISPAM_ENABLED:
+            try:
+                await antispam.handle_message_for_spam(self, message)
+            except Exception as exc:
+                if self.state_handler is not None:
+                    await self.state_handler.report_error("antispam", exc)
+                else:
+                    logger.exception(f"antispam failed before state_handler ready: {exc}")
+        # commands.Bot routes prefix commands here too — preserve that.
+        await self.process_commands(message)
 
     async def on_member_join(self, member: discord.Member) -> None:
         try:
