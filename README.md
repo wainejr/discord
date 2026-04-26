@@ -49,6 +49,10 @@ uv sync
    | `ACELERADO_LOG_LEVEL`           | (opcional) `DEBUG`/`INFO`/`WARNING`/…           |
    | `ACELERADO_AUTO_THREAD`         | (opcional) Auto-cria thread no anúncio de vídeo, default `true` |
    | `DISCORD_WELCOME_CHANNEL_ID`    | (opcional) Canal pra mensagem de boas-vindas. Se `0`/vazio, tenta DM. |
+   | `DISCORD_MODS_CHANNEL_ID`       | (opcional) Canal privado de mods. Recebe `/report`. |
+   | `ACELERADO_LIVE_REMINDER_MINUTES`| (opcional) Quantos minutos antes do início de uma live agendada o bot avisa. Default `15`. |
+   | `DISCORD_REVIEW_CHANNEL_ID`     | (opcional) Canal privado pros rascunhos do resumo semanal aguardarem aprovação. |
+   | `ACELERADO_APOIADORES_WHITELIST`| (opcional) Usernames isentos do relatório de apoiadores stale. Default `eniaw`. |
 
 2. **Credenciais OAuth do Google** — copie o exemplo e substitua pelos valores da sua app:
 
@@ -58,6 +62,53 @@ uv sync
 
    Na primeira execução que precisar da API do YouTube (por ex. `acelerado run` ou `acelerado refresh-token`), o navegador abrirá para consentimento e o token será salvo em `token.pickle`.
 
+## Como obter as credenciais
+
+Passo-a-passo pra preencher tudo do zero. Se você já tem app de bot no Discord e projeto no Google Cloud, pula direto pra "Pegando os IDs do servidor" no fim.
+
+### Discord — bot + token + intent
+
+1. Acesse o [Discord Developer Portal](https://discord.com/developers/applications) e clique em **New Application**.
+2. Dê um nome, aceite os termos.
+3. Na navegação à esquerda, vá em **Bot**:
+   - Clique em **Reset Token** e copie o valor — vira o seu `DISCORD_TOKEN` no `.env`. **Esse token nunca deve ser compartilhado nem commitado.**
+   - Em **Privileged Gateway Intents**, ligue **Server Members Intent** (necessário pra sincronização de cargos).
+4. Em **OAuth2 → URL Generator** (menu esquerdo):
+   - **Scopes**: marque `bot` e `applications.commands`.
+   - **Bot Permissions**: marque pelo menos `Send Messages`, `Manage Messages` (pra anti-spam de invites), `Manage Roles` (pra adicionar `Registradores`), `Read Messages/View Channels`, `Create Public Threads` (pra auto-thread em anúncios).
+   - Copie a URL gerada e abra num navegador logado na sua conta Discord. Selecione o servidor onde o bot vai entrar e autorize.
+
+### Google Cloud — OAuth + API key
+
+1. Acesse o [Google Cloud Console](https://console.cloud.google.com/) e crie (ou selecione) um projeto.
+2. Em **APIs e Serviços → Biblioteca**, busque **YouTube Data API v3** e clique em **Ativar**.
+3. **Tela de consentimento OAuth**: configure como "Externo" (mesmo se for só pra você), preencha nome do app e e-mail de suporte. Em "Usuários de teste", adicione o e-mail do dono do canal do YouTube.
+4. **APIs e Serviços → Credenciais**:
+   - **Criar credenciais → ID do cliente OAuth** → tipo de aplicativo "App para computador". Baixe o JSON e renomeie pra `credentials.json` na raiz do repo.
+   - **Criar credenciais → Chave de API** → copia a chave; vira o `YOUTUBE_API_KEY` no `.env`. Se quiser, restrinja a chave à YouTube Data API v3.
+
+### IDs do servidor (Discord) e do canal (YouTube)
+
+**Discord — habilite o Modo de Desenvolvedor**:
+- Configurações do usuário → Avançado → ligue "Modo de desenvolvedor".
+- Agora clique-direito em qualquer servidor / canal / cargo → **Copiar ID**.
+- Pra `DISCORD_GUILD_ID`: clique-direito no nome do servidor → Copiar ID.
+- Pra `DISCORD_ANNOUNCE_CHANNEL_ID` / `DISCORD_LOG_CHANNEL_ID` / `DISCORD_WELCOME_CHANNEL_ID` / `DISCORD_MODS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID`: clique-direito no canal → Copiar ID.
+
+**YouTube — `YOUTUBE_CHANNEL_ID`**:
+- Painel de criador (`studio.youtube.com`) → Configurações → Canal → ID do canal. Começa com `UC...`.
+- Ou: na URL do seu canal `youtube.com/channel/UCxxxxxx`, é o segmento depois de `/channel/`.
+
+### Primeiro consentimento
+
+Na primeira vez que rodar algo que toca a API privada do YouTube (membros, vídeos não-listados):
+
+```sh
+uv run acelerado refresh-token
+```
+
+Vai abrir o navegador. Faça login com a conta do criador (a mesma cadastrada como "usuário de teste" na tela de consentimento OAuth). O token vai pra `token.pickle`. A partir daí, `acelerado run` funciona sem nova interação.
+
 ## Slash commands no Discord
 
 | Comando | Descrição |
@@ -65,6 +116,10 @@ uv sync
 | `/links` | Lista os canais/redes oficiais (resposta ephemeral, só você vê). |
 | `/sync` | (admin) Força a sincronização de cargos `Registradores` na hora — útil quando alguém acabou de virar membro pago no YouTube e não quer esperar o tick. |
 | `/update` | (admin) Faz `git pull` + `uv sync` e reinicia o bot via wrapper (exit code 75). Veja "Restart automático" abaixo. |
+| `/report` | Reportar uma mensagem aos mods. Recebe link da mensagem (Copy Message Link) + motivo. Rate-limit de 3 reports / 10min por usuário. |
+| `/preview-summary` | (admin) Posta o rascunho do resumo semanal **agora** no canal de review (botões pra Aprovar / Editar / Descartar). |
+| `/preview-stale` | (admin) Posta a lista de apoiadores stale **agora** no canal de mods. |
+| `/godbolt` | Gera link do [Compiler Explorer](https://godbolt.org) com seu código pré-carregado. Suporta C, C++, Rust, Zig, Go, Python, JavaScript, Java, Haskell, Odin. |
 
 Todos os slash commands são **guild-scoped** — registrados no servidor configurado em `DISCORD_GUILD_ID`, propagam instantaneamente. Para adicionar um novo, ver `acelerado/slash.py`.
 
@@ -84,6 +139,7 @@ uv run acelerado --help
 | `acelerado audit-members`     | Lista membros com o cargo `Registradores` que perderam o cargo do YouTube (tabela `rich`). |
 | `acelerado refresh-token`     | Faz backup de `token.pickle` e refaz o fluxo OAuth.                     |
 | `acelerado update`            | Faz `git pull --ff-only` + `uv sync --frozen`. Sai com exit 75 se atualizou; o wrapper externo deve restartar. |
+| `acelerado healthcheck [--max-age N]` | Lê `last_tick.txt` e retorna exit 0 (ok) ou 1 (stale/missing). Default `--max-age` = 2× tick interval. Útil em cron. |
 
 ### Logs
 
@@ -205,6 +261,8 @@ token.pickle      # token OAuth em cache (gitignored)
 ```
 
 ## Como contribuir
+
+Veja [CONTRIBUTING.md](./CONTRIBUTING.md) pra um guia rápido (setup, padrões, workflow). Resumo:
 
 1. Faça um fork deste repositório.
 2. Clone o seu fork:
