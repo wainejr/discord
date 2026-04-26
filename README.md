@@ -120,6 +120,7 @@ Vai abrir o navegador. Faça login com a conta do criador (a mesma cadastrada co
 | `/preview-summary` | (admin) Posta o rascunho do resumo semanal **agora** no canal de review (botões pra Aprovar / Editar / Descartar). |
 | `/preview-stale` | (admin) Posta a lista de apoiadores stale **agora** no canal de mods. |
 | `/godbolt` | Gera link do [Compiler Explorer](https://godbolt.org) com seu código pré-carregado. Suporta C, C++, Rust, Zig, Go, Python, JavaScript, Java, Haskell, Odin. |
+| `/config list / set-channel / set / unset` | (admin) Inspeciona/edita o overlay de config runtime sem reiniciar. Picker nativo de canal — sem copiar IDs. Ver "Configuração runtime" abaixo. |
 
 Todos os slash commands são **guild-scoped** — registrados no servidor configurado em `DISCORD_GUILD_ID`, propagam instantaneamente. Para adicionar um novo, ver `acelerado/slash.py`.
 
@@ -140,6 +141,39 @@ uv run acelerado --help
 | `acelerado refresh-token`     | Faz backup de `token.pickle` e refaz o fluxo OAuth.                     |
 | `acelerado update`            | Faz `git pull --ff-only` + `uv sync --frozen`. Sai com exit 75 se atualizou; o wrapper externo deve restartar. |
 | `acelerado healthcheck [--max-age N]` | Lê `last_tick.txt` e retorna exit 0 (ok) ou 1 (stale/missing). Default `--max-age` = 2× tick interval. Útil em cron. |
+| `acelerado config list / get / set / unset / edit` | Inspeciona ou edita o overlay de configuração runtime (`config.json`). Veja "Configuração runtime" abaixo. |
+| `acelerado channels [--all]` | Conecta no gateway, lista os canais do servidor (id + nome + categoria) e marca quais estão ligados em qual key de `config.json`. Útil pra prep de `config set` via SSH sem abrir o Discord. |
+
+### Configuração runtime — `config.json` e `/config`
+
+A partir do issue #30, IDs de canal e ajustes não-secretos podem ser editados em runtime sem mexer no `.env` nem reiniciar:
+
+- **Resolução**: `config.json` (overlay) → `.env` / env vars → defaults declarados em `EnvCfg`.
+- **Segredos** (`DISCORD_TOKEN`, `YOUTUBE_API_KEY`) **continuam exclusivos do `.env`** — nunca vão pra `config.json`. Tentativas de gravá-los via CLI/slash são rejeitadas.
+- `config.json` é **gitignored** (overlay local da máquina onde o bot roda).
+
+**Pelo Discord (admin)** — picker nativo, sem copiar IDs:
+
+```
+/config list                              # mostra valores atuais + origem
+/config set-channel key:welcome channel:#boas-vindas
+/config set key:tick-seconds value:60
+/config unset key:tick-seconds
+```
+
+**Pela CLI** (útil em SSH, scripts):
+
+```sh
+uv run acelerado config list
+uv run acelerado channels                              # lista canais do server (com IDs)
+uv run acelerado config set DISCORD_WELCOME_CHANNEL_ID 123456789
+uv run acelerado config unset ACELERADO_TICK_SECONDS
+uv run acelerado config edit          # abre $EDITOR no config.json
+```
+
+`/config list` no Discord renderiza IDs de canal como menções clicáveis (`<#id>`) — assim você vê na hora pra que canal cada binding está apontando.
+
+Mudanças via `/config` ou `acelerado config set` aplicam **imediatamente** ao próximo tick / próxima slash interaction. Exceção: `ACELERADO_TICK_SECONDS` é lido uma vez em `setup_hook` — alterar exige restart.
 
 ### Logs
 

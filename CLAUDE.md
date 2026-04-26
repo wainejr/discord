@@ -11,7 +11,7 @@ The codebase is small, single-bot, Python 3.11+, and is meant to run inside a `t
 - **Language:** Python >=3.11
 - **Discord:** `discord.py` 2.x — `commands.Bot` subclass (`AceleradoBot`) using `setup_hook` and `discord.ext.tasks.loop` for periodic work; `members` intent enabled
 - **YouTube:** `google-api-python-client` via OAuth2 (`google-auth-oauthlib`); a token-based client is used so members-only / unlisted videos are visible
-- **Config:** `pydantic-settings` (`BaseSettings` reading `.env`)
+- **Config:** `pydantic-settings` (`BaseSettings` in `env.py`) wrapped by a runtime `Settings` overlay in `config.py` (issue #30). Resolution: `config.json` (overlay, gitignored, atomic-written) → `.env` / process env → defaults. Edited via `acelerado config` CLI and `/config` slash group; secrets (`DISCORD_TOKEN`, `YOUTUBE_API_KEY`) are guarded — only `.env`. `get_env()` is now a thin proxy over `get_settings().cfg`; tests still call `get_env.cache_clear()` (delegates to `reload_settings()`).
 - **CLI:** `typer` — single `acelerado` entrypoint with subcommands (`run`, `audit-members`, `refresh-token`, `status`, `monitor`)
 - **TUI:** `textual` — used for the `monitor` command (live token expiry + recent announcements)
 - **Packaging:** `pyproject.toml` (hatchling), managed with `uv`
@@ -34,7 +34,9 @@ acelerado/
   state.py        # AceleradoState — per-tick orchestration + report_error
   youtube.py      # OAuth + YouTube Data API helpers (lazy lru_cache)
   tui.py          # textual MonitorApp
-  env.py          # pydantic-settings (incl. ACELERADO_TICK_SECONDS)
+  env.py          # EnvCfg pydantic schema (incl. ACELERADO_TICK_SECONDS)
+  config.py       # Settings overlay — config.json on top of EnvCfg
+                  # (atomic write, set/unset/reload, secret-key guard)
   log.py          # setup_logging() with RichHandler
 scripts/
   send_token.sh   # SCP token.pickle to a remote host
