@@ -73,7 +73,7 @@ uv sync
 | `/report` | Reportar uma mensagem aos mods. Recebe link da mensagem (Copy Message Link) + motivo. Rate-limit de 3 reports / 10min por usuário. |
 | `/preview-summary` | (admin) Posta o rascunho do resumo semanal **agora** no canal de review (botões pra Aprovar / Editar / Descartar). |
 | `/preview-stale` | (admin) Posta a lista de apoiadores stale **agora** no canal de mods. |
-| `/godbolt` | Gera link do [Compiler Explorer](https://godbolt.org) com seu código pré-carregado. Suporta C, C++, Rust, Zig, Go. |
+| `/godbolt` | Gera link do [Compiler Explorer](https://godbolt.org) com seu código pré-carregado. Suporta C, C++, Rust, Zig, Go, Python, JavaScript, Java, Haskell, Odin. |
 
 Todos os slash commands são **guild-scoped** — registrados no servidor configurado em `DISCORD_GUILD_ID`, propagam instantaneamente. Para adicionar um novo, ver `acelerado/slash.py`.
 
