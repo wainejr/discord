@@ -59,9 +59,7 @@ def _run(cmd: list[str], cwd: Path, timeout: float = _DEFAULT_TIMEOUT) -> tuple[
     ``timeout(1)``) so callers can tell it apart from a normal non-zero exit.
     """
     try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=str(cwd), timeout=timeout
-        )
+        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(cwd), timeout=timeout)
     except subprocess.TimeoutExpired:
         return 124, "", f"timed out after {timeout:.0f}s"
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
