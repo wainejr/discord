@@ -49,6 +49,28 @@ class EnvCfg(BaseSettings):
     # that are exempt from the "stale apoiadores" report. Comma-separated.
     ACELERADO_APOIADORES_WHITELIST: str = "eniaw"
 
+    # ------------------------------------------------------------------
+    # Anti-spam (cross-channel) — issue #31
+    # Default disabled: opt-in once an admin has watched the alerts and
+    # is comfortable with the thresholds.
+    # ------------------------------------------------------------------
+    ACELERADO_ANTISPAM_ENABLED: bool = False
+    # Sliding window in seconds for the cross-channel detector.
+    ACELERADO_ANTISPAM_WINDOW_SECONDS: int = 30
+    # Number of distinct channels (within the window) that triggers a signal.
+    ACELERADO_ANTISPAM_CROSS_CHANNEL_THRESHOLD: int = 3
+    # Reaction when a signal fires. ``alert`` only logs; ``delete`` removes
+    # cross-posted duplicates; ``timeout`` mutes the user.
+    ACELERADO_ANTISPAM_ACTION: str = "alert"
+    # Minutes to apply when ``ACELERADO_ANTISPAM_ACTION == "timeout"``.
+    ACELERADO_ANTISPAM_TIMEOUT_MINUTES: int = 10
+    # Comma-separated channel IDs exempt from cross-channel detection
+    # (e.g. cross-post hubs that legitimately mirror announcements).
+    ACELERADO_ANTISPAM_CHANNEL_WHITELIST: str = ""
+    # Per-user notification cooldown (seconds) so the bot doesn't flood
+    # the mods channel with repeated alerts for the same user.
+    ACELERADO_ANTISPAM_ALERT_COOLDOWN_SECONDS: int = 600
+
 
 def get_env() -> EnvCfg:
     """Return the merged :class:`EnvCfg`, with ``config.json`` applied on top.
