@@ -34,18 +34,33 @@ def test_state_raises_when_channels_missing(chdir_tmp, fake_bot, monkeypatch):
         state_mod.AceleradoState(fake_bot)
 
 
-def test_state_seeds_published_file_on_first_run(
+async def test_warm_up_seeds_published_file_on_first_run(
     chdir_tmp, fake_bot, monkeypatch, make_playlist_item_fn
 ):
     items = [make_playlist_item_fn("a"), make_playlist_item_fn("b")]
     monkeypatch.setattr(yt_mod, "get_last_videos", lambda max_videos=20: items)
 
-    state_mod.AceleradoState(fake_bot)
+    state = state_mod.AceleradoState(fake_bot)
+    # Construction must NOT touch published.txt — that's warm_up's job.
+    assert not (chdir_tmp / "published.txt").exists()
+
+    await state.warm_up()
     assert (chdir_tmp / "published.txt").read_text().splitlines() == ["a", "b"]
 
 
+async def test_warm_up_reports_youtube_failure(chdir_tmp, fake_bot, fake_guild, monkeypatch):
+    def boom(max_videos: int = 20):
+        raise RuntimeError("youtube down")
+
+    monkeypatch.setattr(yt_mod, "get_last_videos", boom)
+    state = state_mod.AceleradoState(fake_bot)
+    # Should NOT raise — failure flows through report_error.
+    await state.warm_up()
+    fake_guild._log.send.assert_awaited()
+
+
 # ---------------------------------------------------------------------------
-# should_announce_video filtering
+# should_announce_video filtering (pure helpers — live in youtube module)
 # ---------------------------------------------------------------------------
 
 
@@ -56,29 +71,29 @@ def built_state(chdir_tmp, fake_bot, monkeypatch):
     return state_mod.AceleradoState(fake_bot)
 
 
-def test_announce_rules_public_processed_passes(built_state, make_video_fn):
-    assert built_state.should_announce_video(make_video_fn()) is True
+def test_announce_rules_public_processed_passes(make_video_fn):
+    assert yt_mod.should_announce_video(make_video_fn()) is True
 
 
-def test_announce_rules_skip_non_public(built_state, make_video_fn):
-    assert built_state.should_announce_video(make_video_fn(privacy_status="unlisted")) is False
+def test_announce_rules_skip_non_public(make_video_fn):
+    assert yt_mod.should_announce_video(make_video_fn(privacy_status="unlisted")) is False
 
 
-def test_announce_rules_skip_unprocessed_unless_live(built_state, make_video_fn):
+def test_announce_rules_skip_unprocessed_unless_live(make_video_fn):
     unprocessed = make_video_fn(upload_status="uploaded")
-    assert built_state.should_announce_video(unprocessed) is False
+    assert yt_mod.should_announce_video(unprocessed) is False
 
     live = make_video_fn(upload_status="uploaded", livestream=True)
-    assert built_state.should_announce_video(live) is True
+    assert yt_mod.should_announce_video(live) is True
 
 
-def test_announce_rules_skip_vertical(built_state, make_video_fn):
-    assert built_state.should_announce_video(make_video_fn(vertical=True)) is False
+def test_announce_rules_skip_vertical(make_video_fn):
+    assert yt_mod.should_announce_video(make_video_fn(vertical=True)) is False
 
 
-def test_video_state_returns_all_flags(built_state, make_video_fn):
-    state_dict = built_state.get_video_state(make_video_fn(livestream=True))
-    assert set(state_dict.keys()) == {
+def test_video_state_returns_all_flags(make_video_fn):
+    flags = yt_mod.video_state_flags(make_video_fn(livestream=True))
+    assert set(flags.keys()) == {
         "non-listed",
         "is-processed",
         "is-livestream",
@@ -240,7 +255,7 @@ async def test_check_expiration_rate_limits_to_one_per_hour(built_state, fake_gu
     assert fake_guild._log.send.await_count == 1
 
     # Force last_msg_expiry back in time; next call should warn again.
-    built_state.last_msg_expiry = datetime.now() - timedelta(hours=2)
+    built_state.last_msg_expiry = datetime.now(UTC) - timedelta(hours=2)
     await built_state.check_expiration()
     assert fake_guild._log.send.await_count == 2
 
@@ -463,18 +478,18 @@ async def test_check_upcoming_lives_dedups_across_ticks(
     assert "live1" in state_mod.LIVE_REMINDERS_PATH.read_text()
 
 
-def test_should_announce_skips_scheduled_but_not_started(built_state, make_video_fn):
+def test_should_announce_skips_scheduled_but_not_started(make_video_fn):
     video = make_video_fn(livestream=True)
     video["liveStreamingDetails"] = {"scheduledStartTime": "2099-01-01T00:00:00Z"}
-    assert built_state.should_announce_video(video) is False
+    assert yt_mod.should_announce_video(video) is False
 
 
-def test_should_announce_passes_for_started_live(built_state, make_video_fn):
+def test_should_announce_passes_for_started_live(make_video_fn):
     video = make_video_fn(livestream=True)
     video["liveStreamingDetails"] = {
         "actualStartTime": "2026-04-25T19:00:00Z",
     }
-    assert built_state.should_announce_video(video) is True
+    assert yt_mod.should_announce_video(video) is True
 
 
 async def test_event_loop_isolates_step_errors(built_state, monkeypatch):
@@ -643,11 +658,11 @@ async def test_report_error_rate_limited_within_cooldown(built_state, fake_guild
 
 
 async def test_report_error_resumes_after_cooldown(built_state, fake_guild):
-    from datetime import datetime, timedelta
+    from datetime import UTC, datetime, timedelta
 
     await built_state.report_error("first", RuntimeError("a"))
     # Force the cooldown to be in the past.
-    built_state._last_error_report = datetime.now() - timedelta(hours=1)
+    built_state.error_reporter.last_report = datetime.now(UTC) - timedelta(hours=1)
     await built_state.report_error("second", RuntimeError("b"))
     assert fake_guild._log.send.await_count == 2
 

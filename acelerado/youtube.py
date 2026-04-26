@@ -137,9 +137,12 @@ def is_live_now(video: dict) -> bool:
     return "actualStartTime" in details and "actualEndTime" not in details
 
 
-def get_scheduled_start_time(video: dict) -> datetime | None:
-    """Return ``scheduledStartTime`` as aware UTC datetime, or None."""
-    raw = video.get("liveStreamingDetails", {}).get("scheduledStartTime")
+def parse_iso8601_z(raw: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp (incl. trailing ``Z``) to aware UTC.
+
+    Returns None for empty input or unparseable values; logs a warning for
+    the latter so silent format drift in YouTube payloads is visible.
+    """
     if not raw:
         return None
     if raw.endswith("Z"):
@@ -147,8 +150,14 @@ def get_scheduled_start_time(video: dict) -> datetime | None:
     try:
         return datetime.fromisoformat(raw)
     except ValueError:
-        logger.warning(f"Invalid scheduledStartTime format: {raw!r}")
+        logger.warning(f"Invalid ISO-8601 timestamp: {raw!r}")
         return None
+
+
+def get_scheduled_start_time(video: dict) -> datetime | None:
+    """Return ``scheduledStartTime`` as aware UTC datetime, or None."""
+    raw = video.get("liveStreamingDetails", {}).get("scheduledStartTime")
+    return parse_iso8601_z(raw)
 
 
 def get_upcoming_livestream_ids(max_results: int = 5) -> list[str]:
@@ -191,3 +200,32 @@ def is_vertical(video: dict) -> bool:
     width = stream.get("widthPixels", 0)
     height = stream.get("heightPixels", 0)
     return height > width
+
+
+def should_announce_video(video: dict) -> bool:
+    """True if the video passes every filter we apply before announcing.
+
+    Pure function — operates only on the YouTube payload shape.
+    """
+    if is_non_listed(video):
+        return False
+    # Scheduled-but-not-yet-live: handled by the live-reminder step, not
+    # here. Avoid announcing "Estamos em live!" before the live actually
+    # starts.
+    if is_livestream(video) and not is_live_now(video):
+        return False
+    if not is_processed(video) and not is_livestream(video):
+        return False
+    if is_vertical(video):
+        return False
+    return True
+
+
+def video_state_flags(video: dict) -> dict[str, bool]:
+    """Snapshot of the boolean flags consulted by :func:`should_announce_video`."""
+    return {
+        "non-listed": is_non_listed(video),
+        "is-processed": is_processed(video),
+        "is-livestream": is_livestream(video),
+        "is-vertical": is_vertical(video),
+    }

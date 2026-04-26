@@ -1,5 +1,7 @@
 import datetime as _dt
 import logging
+from collections.abc import Awaitable, Callable
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import discord
@@ -101,23 +103,31 @@ class AceleradoBot(commands.Bot):
         await self.wait_until_ready()
         if self.state_handler is None:
             self.state_handler = AceleradoState(self)
+            await self.state_handler.warm_up()
 
     # ------------------------------------------------------------------
     # Weekly scheduled drafts (run Monday 9am SP)
     # ------------------------------------------------------------------
 
-    @tasks.loop(time=[_MON_9AM_SP])
-    async def weekly_summary_task(self) -> None:
+    async def _run_weekly(
+        self,
+        name: str,
+        fn: Callable[[commands.Bot], Awaitable[Any]],
+    ) -> None:
         # discord.py's tasks.loop with `time=` fires daily at that time;
         # gate to Mondays only.
         if _dt.datetime.now(_MON_9AM_SP.tzinfo).weekday() != 0:
             return
         try:
-            await review.post_weekly_summary_draft(self)
+            await fn(self)
         except Exception as exc:
-            logger.exception("weekly_summary_task failed")
+            logger.exception(f"{name} weekly task failed")
             if self.state_handler is not None:
-                await self.state_handler.report_error("weekly_summary", exc)
+                await self.state_handler.report_error(name, exc)
+
+    @tasks.loop(time=[_MON_9AM_SP])
+    async def weekly_summary_task(self) -> None:
+        await self._run_weekly("weekly_summary", review.post_weekly_summary_draft)
 
     @weekly_summary_task.before_loop
     async def _before_weekly_summary(self) -> None:
@@ -125,14 +135,7 @@ class AceleradoBot(commands.Bot):
 
     @tasks.loop(time=[_MON_9AM_SP])
     async def weekly_stale_task(self) -> None:
-        if _dt.datetime.now(_MON_9AM_SP.tzinfo).weekday() != 0:
-            return
-        try:
-            await review.post_stale_report(self)
-        except Exception as exc:
-            logger.exception("weekly_stale_task failed")
-            if self.state_handler is not None:
-                await self.state_handler.report_error("weekly_stale", exc)
+        await self._run_weekly("weekly_stale", review.post_stale_report)
 
     @weekly_stale_task.before_loop
     async def _before_weekly_stale(self) -> None:
