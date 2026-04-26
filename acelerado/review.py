@@ -48,20 +48,9 @@ def build_weekly_summary_text(videos: list[dict], window: timedelta = SUMMARY_WI
     """
     cutoff = datetime.now(UTC) - window
 
-    def _parse_published(video: dict) -> datetime | None:
-        raw = video.get("snippet", {}).get("publishedAt")
-        if not raw:
-            return None
-        if raw.endswith("Z"):
-            raw = raw[:-1] + "+00:00"
-        try:
-            return datetime.fromisoformat(raw)
-        except ValueError:
-            return None
-
     in_window: list[tuple[datetime, dict]] = []
     for v in videos:
-        when = _parse_published(v)
+        when = youtube.parse_iso8601_z(v.get("snippet", {}).get("publishedAt"))
         if when is not None and when >= cutoff:
             in_window.append((when, v))
     in_window.sort(key=lambda pair: pair[0], reverse=True)

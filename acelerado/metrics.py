@@ -47,15 +47,32 @@ class Metrics(BaseModel):
 # Persistence
 # ---------------------------------------------------------------------------
 
+# Path-keyed in-process cache. The bot is the only process writing to a
+# given metrics file, so we can keep the parsed object in memory and skip
+# the load/parse step on every increment. Disk writes still happen so
+# external readers (TUI, healthcheck) see fresh data.
+_cache: dict[Path, Metrics] = {}
+
+
+def reset_cache() -> None:
+    """Test helper — drop the in-process metrics cache."""
+    _cache.clear()
+
 
 def load(path: Path = METRICS_PATH) -> Metrics:
+    cached = _cache.get(path)
+    if cached is not None:
+        return cached
     if not path.exists():
-        return Metrics()
-    try:
-        return Metrics.model_validate_json(path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        logger.warning(f"metrics.json corrupted ({exc}); starting fresh")
-        return Metrics()
+        m = Metrics()
+    else:
+        try:
+            m = Metrics.model_validate_json(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning(f"metrics.json corrupted ({exc}); starting fresh")
+            m = Metrics()
+    _cache[path] = m
+    return m
 
 
 def _atomic_write(path: Path, data: str) -> None:
@@ -65,6 +82,7 @@ def _atomic_write(path: Path, data: str) -> None:
 
 
 def save(m: Metrics, path: Path = METRICS_PATH) -> None:
+    _cache[path] = m
     _atomic_write(path, m.model_dump_json(indent=2))
 
 

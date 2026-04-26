@@ -8,6 +8,9 @@ from discord.ext import commands
 
 from acelerado import metrics, youtube
 from acelerado.env import get_env
+from acelerado.error_reporter import ErrorReporter
+from acelerado.review import parse_username_whitelist
+from acelerado.store import LineSetStore
 
 logger = logging.getLogger(__name__)
 
@@ -18,21 +21,18 @@ FILENAME_PUBLISHED = Path("published.txt")
 LAST_TICK_PATH = Path("last_tick.txt")
 LIVE_REMINDERS_PATH = Path("live_reminders.txt")
 
-# How often we're willing to post a "something blew up" report to Discord.
-# Local logs are always emitted; this only throttles the remote notification
-# so a broken tick doesn't spam the log channel every 5 minutes.
-ERROR_REPORT_COOLDOWN = timedelta(minutes=10)
-
 
 class AceleradoState:
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+        self.published = LineSetStore(FILENAME_PUBLISHED)
+        self.live_reminders = LineSetStore(LIVE_REMINDERS_PATH)
         # "Long enough ago that the first warning isn't rate-limited."
-        long_ago = datetime.now() - timedelta(days=7)
-        self.last_msg_expiry = long_ago
-        self._last_error_report = long_ago
+        self.last_msg_expiry = datetime.now(UTC) - timedelta(days=7)
+        self.error_reporter = ErrorReporter(lambda: self.channel_log)
 
-        self._initialize_videos_pubs()
+        # Channel validation only — cheap cache lookup, no I/O. Network /
+        # OAuth-triggering work happens in `warm_up`.
         if self.channel_log is None or self.channel_announce is None:
             raise ValueError(
                 f"Unable to get channels log={self.channel_log} announce={self.channel_announce}"
@@ -66,71 +66,43 @@ class AceleradoState:
     @property
     def videos_pubs(self) -> list[str]:
         """Non-empty, stripped IDs from ``published.txt``. Missing file -> []."""
-        if not FILENAME_PUBLISHED.exists():
-            return []
-        return [
-            line.strip() for line in FILENAME_PUBLISHED.read_text().splitlines() if line.strip()
-        ]
+        return self.published.read_all()
 
-    def _initialize_videos_pubs(self) -> None:
-        if not FILENAME_PUBLISHED.exists():
-            latest_videos = youtube.get_last_videos(max_videos=20)
-            video_ids = [youtube.get_video_id(v) for v in latest_videos]
-            FILENAME_PUBLISHED.write_text("\n".join(video_ids))
+    async def warm_up(self) -> None:
+        """First-run seeding. Called from the bot once the gateway is ready.
 
+        Kept out of ``__init__`` because it makes a YouTube API call (and
+        on a fresh deployment will trigger the OAuth browser flow), which
+        would otherwise block the gateway-ready callback.
+        """
+        if not FILENAME_PUBLISHED.exists():
+            try:
+                latest = youtube.get_last_videos(max_videos=20)
+                ids = [youtube.get_video_id(v) for v in latest]
+                FILENAME_PUBLISHED.write_text("\n".join(ids))
+            except Exception as exc:
+                await self.error_reporter.report("warm_up", exc)
+                return
         logger.info(f"Videos published on start: {self.videos_pubs}")
 
     def add_video_published(self, video_id: str) -> None:
         """Append ``video_id`` to ``published.txt``. No-op if already present."""
-        existing = set(self.videos_pubs)
-        if video_id in existing:
-            logger.debug(f"Video {video_id} already in published.txt, skipping append")
-            return
-        # Ensure the file exists — callers shouldn't have to care.
-        if not FILENAME_PUBLISHED.exists():
-            FILENAME_PUBLISHED.write_text("")
-        # Use a leading newline only when the file isn't empty/missing-trailing-nl.
-        current = FILENAME_PUBLISHED.read_text()
-        prefix = "" if not current or current.endswith("\n") else "\n"
-        with FILENAME_PUBLISHED.open("a") as f:
-            f.write(f"{prefix}{video_id}\n")
+        self.published.add(video_id)
 
     def check_videos_to_pub(self) -> list[str]:
-        published = set(self.videos_pubs)
-        return [
-            youtube.get_video_id(v)
-            for v in youtube.get_last_videos(max_videos=10)
-            if youtube.get_video_id(v) not in published
-        ]
+        published = self.published.as_set()
+        out: list[str] = []
+        for v in youtube.get_last_videos(max_videos=10):
+            vid = youtube.get_video_id(v)
+            if vid not in published:
+                out.append(vid)
+        return out
 
     # ------------------------------------------------------------------
-    # Announcement filtering
+    # Announcement
     # ------------------------------------------------------------------
-
-    def should_announce_video(self, video: dict) -> bool:
-        if youtube.is_non_listed(video):
-            return False
-        # Scheduled-but-not-yet-live: handled by _check_upcoming_lives
-        # (reminder), not here. Avoid announcing "Estamos em live!" before
-        # the live actually starts.
-        if youtube.is_livestream(video) and not youtube.is_live_now(video):
-            return False
-        if not youtube.is_processed(video) and not youtube.is_livestream(video):
-            return False
-        if youtube.is_vertical(video):
-            return False
-        return True
-
-    def get_video_state(self, video: dict) -> dict:
-        return {
-            "non-listed": youtube.is_non_listed(video),
-            "is-processed": youtube.is_processed(video),
-            "is-livestream": youtube.is_livestream(video),
-            "is-vertical": youtube.is_vertical(video),
-        }
 
     async def announce_video(self, video_id: str, video: dict) -> None:
-        self.add_video_published(video_id)
         if youtube.is_livestream(video):
             msg = "Estamos em live!"
         elif youtube.is_members_only(video):
@@ -145,7 +117,13 @@ class AceleradoState:
         if channel is None:
             logger.error("Announce channel disappeared from cache; cannot send")
             return
+        # Send first, then record. Recording before send risks marking a
+        # video "announced" when Discord rejected the message — the next
+        # tick would then skip it forever. The reverse failure (double-post
+        # if Discord accepted but we crash before recording) is louder and
+        # rarer.
         sent = await channel.send(msg_send)
+        self.add_video_published(video_id)
         metrics.increment("videos_announced", context=video_id)
 
         if get_env().ACELERADO_AUTO_THREAD:
@@ -177,11 +155,11 @@ class AceleradoState:
         if expiration_time is None or expiration_time >= (3600 * 24):
             return
 
-        diff_last_msg = (datetime.now() - self.last_msg_expiry).total_seconds()
+        diff_last_msg = (datetime.now(UTC) - self.last_msg_expiry).total_seconds()
         if diff_last_msg < 3600:
             return
 
-        self.last_msg_expiry = datetime.now()
+        self.last_msg_expiry = datetime.now(UTC)
         expiry_date = youtube.get_token_expiration_date()
         channel = self.channel_log
         if channel is None:
@@ -214,6 +192,7 @@ class AceleradoState:
             return 0
 
         chat_channel = discord.utils.get(guild.channels, name=CHAT_MSG_ADD)
+        whitelist = parse_username_whitelist(get_env().ACELERADO_APOIADORES_WHITELIST)
 
         # A member may appear in several YT-tier roles; dedupe before iterating.
         seen: set[int] = set()
@@ -226,7 +205,7 @@ class AceleradoState:
 
                 if apoiadores_role in member.roles:
                     continue
-                if member.name == "eniaw":
+                if member.name in whitelist:
                     continue
                 await member.add_roles(apoiadores_role)
                 added += 1
@@ -243,40 +222,12 @@ class AceleradoState:
         return added
 
     # ------------------------------------------------------------------
-    # Error reporting — local log + rate-limited Discord notification.
+    # Error reporting — thin wrapper around ErrorReporter to keep the
+    # public API stable for callers (welcome, slash commands, bot.py).
     # ------------------------------------------------------------------
 
     async def report_error(self, context: str, exc: BaseException) -> None:
-        """Log an error locally and, if not rate-limited, post to the log channel.
-
-        ``context`` is a short label for where the error came from so the
-        Discord message is readable at a glance.
-        """
-        logger.exception(f"[{context}] {type(exc).__name__}: {exc}", exc_info=exc)
-        metrics.increment("errors", context=context)
-
-        now = datetime.now()
-        if now - self._last_error_report < ERROR_REPORT_COOLDOWN:
-            return
-        self._last_error_report = now
-
-        channel = self.channel_log
-        if channel is None:
-            return
-
-        summary = f"⚠️ Erro em `{context}`: `{type(exc).__name__}: {exc}`"
-        # Discord caps messages at 2000 chars; leave headroom.
-        if len(summary) > 1900:
-            summary = summary[:1900] + "…"
-        try:
-            await channel.send(summary)
-        except Exception:
-            # A failing notifier must never bubble up — we already logged locally.
-            logger.exception("Failed to deliver error report to Discord log channel")
-
-    # ------------------------------------------------------------------
-    # Tick
-    # ------------------------------------------------------------------
+        await self.error_reporter.report(context, exc)
 
     # ------------------------------------------------------------------
     # Upcoming livestream reminders
@@ -285,25 +236,13 @@ class AceleradoState:
     @property
     def live_reminders_sent(self) -> set[str]:
         """Already-reminded video IDs from ``live_reminders.txt``."""
-        if not LIVE_REMINDERS_PATH.exists():
-            return set()
-        return {ln.strip() for ln in LIVE_REMINDERS_PATH.read_text().splitlines() if ln.strip()}
-
-    def _record_live_reminder(self, video_id: str) -> None:
-        if video_id in self.live_reminders_sent:
-            return
-        if not LIVE_REMINDERS_PATH.exists():
-            LIVE_REMINDERS_PATH.write_text("")
-        current = LIVE_REMINDERS_PATH.read_text()
-        prefix = "" if not current or current.endswith("\n") else "\n"
-        with LIVE_REMINDERS_PATH.open("a") as f:
-            f.write(f"{prefix}{video_id}\n")
+        return self.live_reminders.as_set()
 
     async def _check_upcoming_lives(self) -> None:
         """Send a "live em N min" reminder for any scheduled live within window."""
         now = datetime.now(UTC)
         window = timedelta(minutes=get_env().ACELERADO_LIVE_REMINDER_MINUTES)
-        sent = self.live_reminders_sent
+        sent = self.live_reminders.as_set()
 
         for vid in youtube.get_upcoming_livestream_ids():
             if vid in sent:
@@ -326,7 +265,7 @@ class AceleradoState:
                 logger.error("Announce channel disappeared; can't send live reminder")
                 return
             await channel.send(msg)
-            self._record_live_reminder(vid)
+            self.live_reminders.add(vid)
             logger.info(f"Posted live reminder for {vid} ({title})")
 
     async def _pub_new_videos(self) -> None:
@@ -334,13 +273,13 @@ class AceleradoState:
         for video_id in self.check_videos_to_pub():
             video = youtube.get_video_info(video_id)
             title = youtube.get_video_title(video)
-            if self.should_announce_video(video):
+            if youtube.should_announce_video(video):
                 logger.info(f"Announcing video {video_id} - '{title}'!")
                 await self.announce_video(video_id, video)
             else:
                 logger.info(
                     f"Not announcing video {video_id} - '{title}' yet "
-                    f"({self.get_video_state(video)})"
+                    f"({youtube.video_state_flags(video)})"
                 )
 
     async def event_loop(self) -> None:
