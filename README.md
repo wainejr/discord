@@ -4,12 +4,31 @@ Projeto aberto para toda a comunidade do canal [Waine — Dev do Desempenho](htt
 
 ## Descrição
 
-O **Acelerado** é um bot de Discord que:
+O **Acelerado** é um bot de Discord que automatiza a comunidade do canal e tira trabalho repetitivo da mão dos mods. Funcionalidades principais:
 
-- anuncia novos vídeos e lives do YouTube no canal da comunidade;
-- sincroniza membros do YouTube com o cargo `Registradores` no Discord;
-- avisa quando o token OAuth do YouTube está prestes a expirar;
-- oferece uma CLI (`typer`) com subcomandos utilitários e uma TUI (`textual`) para monitoramento ao vivo.
+**YouTube ↔ Discord**
+- Anuncia novos vídeos no canal da comunidade com `@everyone`, mensagens diferentes pra vídeo regular / membros / livestream e auto-criação de thread de discussão (`ACELERADO_AUTO_THREAD`).
+- Filtra Shorts (vertical) e vídeos não-listados/privados — só anuncia o que faz sentido.
+- Avisa **antes** de lives agendadas começarem (`ACELERADO_LIVE_REMINDER_MINUTES`, default 15min).
+- Sincroniza membros pagos do YouTube com o cargo `Registradores` (cobre todos os tiers via match `"YouTube Member"`); manda boas-vindas no canal `chat-registradores` quando promove.
+- Avisa quando o token OAuth do YouTube está pra expirar (rate-limited a 1 aviso/h).
+
+**Moderação & comunidade**
+- **Anti-spam cross-channel**: detecta a mesma mensagem postada em múltiplos canais em sequência, alerta os mods, deleta duplicatas e aplica timeout.
+- **`/report`**: denúncia ephemeral de mensagens, entregue no canal privado de mods, com rate-limit por usuário (3 / 10min).
+- **Boas-vindas** a novos membros via pool de templates variado (canal público se configurado, senão DM).
+- **Resumo semanal** de vídeos: posta um rascunho no canal de review com botões de Aprovar / Editar / Descartar antes de publicar.
+- **Relatório de apoiadores stale**: lista quem tem `Registradores` mas perdeu o cargo do YouTube (com whitelist configurável).
+
+**Slash commands utilitários**
+- `/links`, `/godbolt` (gera link do [Compiler Explorer](https://godbolt.org) com seu código pré-carregado, ~10 linguagens), `/sync`, `/update`, `/preview-summary`, `/preview-stale`, `/config` (picker nativo de canal pra editar `config.json` em runtime sem reiniciar).
+
+**Operação**
+- **Configuração runtime**: overlay `config.json` editável via `/config` e CLI `acelerado config` — segredos continuam só no `.env`.
+- **Self-update**: `acelerado update` / `/update` faz `git pull` + `uv sync` e sai com exit 75 pro supervisor `scripts/run.sh` reiniciar (backoff exponencial em crashes).
+- **Healthcheck**: `acelerado healthcheck` lê `last_tick.txt` e devolve exit 0/1 — encaixa em cron.
+- **CLI** (`typer`) com `run`, `status`, `audit-members`, `refresh-token`, `channels`, etc., e **TUI** (`textual`) via `acelerado monitor` pra acompanhar token + anúncios ao vivo.
+- **Fail-proof**: cada passo do tick é isolado em try/except, erros são reportados no canal de log do Discord com cooldown de 10min — o bot não cai por causa de uma falha pontual.
 
 Construído com `discord.py` 2.x, `google-api-python-client`, `pydantic-settings`, `typer`, `textual` e `rich`.
 
