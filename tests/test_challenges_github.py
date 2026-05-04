@@ -123,6 +123,47 @@ async def test_no_token_means_no_authorization_header(monkeypatch):
     assert "Authorization" not in route.calls.last.request.headers
 
 
+@respx.mock
+async def test_count_open_submissions_returns_length_of_pr_list():
+    respx.get(f"{gh.API_BASE}/repos/{REPO}/pulls?state=open&per_page=100").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"number": 1, "user": {"login": "alice"}},
+                {"number": 2, "user": {"login": "bob"}},
+                {"number": 3, "user": {"login": "carol"}},
+            ],
+        )
+    )
+    assert await gh.count_open_submissions(REPO) == 3
+
+
+@respx.mock
+async def test_count_open_submissions_zero_when_empty():
+    respx.get(f"{gh.API_BASE}/repos/{REPO}/pulls?state=open&per_page=100").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    assert await gh.count_open_submissions(REPO) == 0
+
+
+@respx.mock
+async def test_count_open_submissions_raises_on_http_error():
+    respx.get(f"{gh.API_BASE}/repos/{REPO}/pulls?state=open&per_page=100").mock(
+        return_value=httpx.Response(500, text="boom")
+    )
+    with pytest.raises(gh.GitHubError, match="500"):
+        await gh.count_open_submissions(REPO)
+
+
+@respx.mock
+async def test_count_open_submissions_raises_on_non_list_payload():
+    respx.get(f"{gh.API_BASE}/repos/{REPO}/pulls?state=open&per_page=100").mock(
+        return_value=httpx.Response(200, json={"unexpected": "shape"})
+    )
+    with pytest.raises(gh.GitHubError, match="expected list"):
+        await gh.count_open_submissions(REPO)
+
+
 def test_slug_month_extracts_prefix():
     assert gh.slug_month("2026-05-deblur") == "2026-05"
     assert gh.slug_month("2026-12-foo-bar") == "2026-12"

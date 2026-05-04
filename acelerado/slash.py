@@ -227,6 +227,18 @@ async def cmd_desafio(interaction: discord.Interaction) -> None:
         )
         return
 
+    # Submission count is best-effort — a flaky GitHub call shouldn't
+    # tank the whole reply. We surface "indisponível" inline instead.
+    try:
+        open_prs = await challenge_github.count_open_submissions(
+            cfg.ACELERADO_CHALLENGES_REPO,
+        )
+        submissions_line = f"📊 **{open_prs}** submissões abertas"
+    except challenge_github.GitHubError:
+        submissions_line = "📊 Submissões: indisponível no momento"
+
+    pr_url = f"https://github.com/{cfg.ACELERADO_CHALLENGES_REPO}/pulls"
+
     embed = discord.Embed(
         title=f"🏁 Desafio de {spec.month} — {spec.title}",
         description=challenge_announce.render_short_status(spec),
@@ -242,6 +254,11 @@ async def cmd_desafio(interaction: discord.Interaction) -> None:
             inline=False,
         )
     embed.add_field(name="Enunciado", value=spec.site_url, inline=False)
+    embed.add_field(
+        name="Submissões",
+        value=f"{submissions_line} — [ver PRs]({pr_url})",
+        inline=False,
+    )
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 

@@ -154,3 +154,28 @@ async def find_current_spec(
         if slug_month(slug) == month:
             return await fetch_spec(repo, slug, token=token)
     return None
+
+
+async def count_open_submissions(repo: str, token: str | None = None) -> int:
+    """Return the number of open pull requests targeting ``repo``.
+
+    For the challenges repo every open PR is, by convention, a
+    submission — there's no other ongoing work in that repo. So PR
+    count is the cheapest signal of community activity. We don't list
+    authors anywhere; the URL we surface in ``/desafio`` lets the user
+    inspect them directly on GitHub if they want.
+
+    Pagination: GitHub's PR endpoint defaults to 30 per page and caps at
+    100. A monthly challenge with >100 open PRs would be a very nice
+    problem to have; if we ever hit it, we'll add `?page=`. For now we
+    cap at one page (``per_page=100``) and trust the cap.
+    """
+    token = _resolve_token(token)
+    async with _client(token) as client:
+        prs = await _get_json(
+            client,
+            f"/repos/{repo}/pulls?state=open&per_page=100",
+        )
+    if not isinstance(prs, list):
+        raise GitHubError(f"expected list from /pulls, got {type(prs).__name__}")
+    return len(prs)
