@@ -14,6 +14,7 @@ To add a new command:
 
 import logging
 import re
+from typing import cast
 
 import discord
 from discord import app_commands
@@ -187,6 +188,241 @@ async def cmd_godbolt(
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+# ---------------------------------------------------------------------------
+# /desafio group — issue #37 Phases 1–3
+#
+# Built as a group so the surface is ``/desafio status``, ``/desafio
+# resultados <slug>``, etc. Same pattern as ``/config``: the group lives
+# inside :func:`_build_desafio_group` because discord.py binds groups to
+# a tree at add time and barfs on re-registration.
+# ---------------------------------------------------------------------------
+
+
+async def _render_status(interaction: discord.Interaction) -> None:
+    """Body of ``/desafio status`` — the active challenge view."""
+    from datetime import UTC, datetime
+
+    from acelerado.challenges import announce as challenge_announce
+    from acelerado.challenges import github as challenge_github
+    from acelerado.env import get_env
+
+    cfg = get_env()
+    if not cfg.ACELERADO_CHALLENGES_ENABLED:
+        await interaction.response.send_message(
+            "⚠️ Desafios mensais ainda não estão habilitados neste servidor.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    month = datetime.now(UTC).strftime("%Y-%m")
+    try:
+        spec = await challenge_github.find_current_spec(
+            cfg.ACELERADO_CHALLENGES_REPO,
+            month,
+        )
+    except challenge_github.GitHubError as exc:
+        await interaction.followup.send(
+            f"⚠️ Não consegui falar com o GitHub: `{exc}`",
+            ephemeral=True,
+        )
+        return
+
+    if spec is None:
+        await interaction.followup.send(
+            f"📭 Nenhum desafio publicado para **{month}** ainda — fica de olho.",
+            ephemeral=True,
+        )
+        return
+
+    # Submission count is best-effort — a flaky GitHub call shouldn't
+    # tank the whole reply. We surface "indisponível" inline instead.
+    try:
+        open_prs = await challenge_github.count_open_submissions(
+            cfg.ACELERADO_CHALLENGES_REPO,
+        )
+        submissions_line = f"📊 **{open_prs}** submissões abertas"
+    except challenge_github.GitHubError:
+        submissions_line = "📊 Submissões: indisponível no momento"
+
+    pr_url = f"https://github.com/{cfg.ACELERADO_CHALLENGES_REPO}/pulls"
+
+    embed = discord.Embed(
+        title=f"🏁 Desafio de {spec.month} — {spec.title}",
+        description=challenge_announce.render_short_status(spec),
+        url=spec.site_url,
+        color=discord.Color.green(),
+    )
+    if spec.caps:
+        embed.add_field(
+            name="Limites",
+            value="\n".join(
+                f"• {challenge_announce.format_cap(k, v)}" for k, v in spec.caps.items()
+            ),
+            inline=False,
+        )
+    embed.add_field(name="Enunciado", value=spec.site_url, inline=False)
+    embed.add_field(
+        name="Submissões",
+        value=f"{submissions_line} — [ver PRs]({pr_url})",
+        inline=False,
+    )
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+def _build_desafio_group() -> app_commands.Group:
+    """Build a fresh ``/desafio`` group bound to a single tree."""
+    from discord.ext import commands
+
+    from acelerado.challenges import github as challenge_github
+    from acelerado.challenges import results as challenge_results
+    from acelerado.challenges.state import ChallengesState
+    from acelerado.env import get_env
+    from acelerado.review import EditableDraftView
+
+    group = app_commands.Group(
+        name="desafio",
+        description="Desafios mensais de performance",
+    )
+
+    @group.command(name="status", description="Mostra o desafio ativo do mês")
+    async def cmd_status(interaction: discord.Interaction) -> None:
+        await _render_status(interaction)
+
+    @group.command(
+        name="resultados",
+        description="(admin) Posta o draft de resultados do desafio no canal de review",
+    )
+    @app_commands.describe(slug="Slug do desafio (ex: 2026-05-deblur)")
+    @app_commands.default_permissions(administrator=True)
+    async def cmd_resultados(interaction: discord.Interaction, slug: str) -> None:
+        cfg = get_env()
+        if not cfg.DISCORD_REVIEW_CHANNEL_ID:
+            await interaction.response.send_message(
+                "⚠️ DISCORD_REVIEW_CHANNEL_ID não configurado.",
+                ephemeral=True,
+            )
+            return
+        if not cfg.DISCORD_CHALLENGES_CHANNEL_ID:
+            await interaction.response.send_message(
+                "⚠️ DISCORD_CHALLENGES_CHANNEL_ID não configurado — sem destino pra postar.",
+                ephemeral=True,
+            )
+            return
+
+        bot = cast(commands.Bot, interaction.client)
+        review_channel = bot.get_channel(cfg.DISCORD_REVIEW_CHANNEL_ID)
+        if not isinstance(review_channel, discord.abc.Messageable):
+            await interaction.response.send_message(
+                "⚠️ Canal de review não acessível.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            results = await challenge_github.fetch_results(
+                cfg.ACELERADO_CHALLENGES_REPO,
+                slug,
+            )
+        except challenge_github.GitHubError as exc:
+            await interaction.followup.send(
+                f"⚠️ Erro buscando results.json: `{exc}`",
+                ephemeral=True,
+            )
+            return
+
+        if results is None:
+            await interaction.followup.send(
+                f"📭 `{slug}/results.json` não existe no repo ainda.",
+                ephemeral=True,
+            )
+            return
+
+        draft = challenge_results.render_results_post(results)
+        view = EditableDraftView(
+            draft,
+            cfg.DISCORD_CHALLENGES_CHANNEL_ID,
+            modal_title="Editar resultados",
+        )
+        await review_channel.send(content=draft, view=view)
+
+        ChallengesState().mark_results_posted(slug)
+        await interaction.followup.send(
+            f"✅ Draft de **{slug}** postado em <#{cfg.DISCORD_REVIEW_CHANNEL_ID}>.",
+            ephemeral=True,
+        )
+
+    @group.command(
+        name="resultados-skip",
+        description="(admin) Para de cobrar resultados desse desafio",
+    )
+    @app_commands.describe(slug="Slug do desafio (ex: 2026-05-deblur)")
+    @app_commands.default_permissions(administrator=True)
+    async def cmd_resultados_skip(interaction: discord.Interaction, slug: str) -> None:
+        ChallengesState().mark_results_dismissed(slug)
+        await interaction.response.send_message(
+            f"✅ Reminders de **{slug}** silenciados.", ephemeral=True
+        )
+
+    @group.command(
+        name="historico",
+        description="Top-3 dos desafios passados (cache de 6h)",
+    )
+    async def cmd_historico(interaction: discord.Interaction) -> None:
+        cfg = get_env()
+        if not cfg.ACELERADO_CHALLENGES_ENABLED:
+            await interaction.response.send_message(
+                "⚠️ Desafios mensais ainda não estão habilitados.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            history, fetched_at = await challenge_github.get_cached_history(
+                cfg.ACELERADO_CHALLENGES_REPO,
+            )
+        except challenge_github.GitHubError as exc:
+            await interaction.followup.send(
+                f"⚠️ Erro lendo o histórico: `{exc}`",
+                ephemeral=True,
+            )
+            return
+
+        if not history:
+            await interaction.followup.send(
+                "📭 Ainda não há resultados publicados.", ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title="🏁 Histórico de desafios",
+            color=discord.Color.dark_gold(),
+        )
+        for results in history:
+            top3 = [e for e in results.ranking if e.rank <= 3]
+            if top3:
+                lines = []
+                for entry in top3:
+                    primary_str = challenge_results.format_metric_value(
+                        results.primary_metric,
+                        entry.metrics.get(results.primary_metric, "—"),
+                    )
+                    lines.append(f"{entry.rank}º @{entry.user} — {primary_str}")
+                value = "\n".join(lines)
+            else:
+                value = "_sem submissões válidas_"
+            embed.add_field(
+                name=f"{results.slug} ({results.primary_metric})",
+                value=value,
+                inline=False,
+            )
+        embed.set_footer(text=f"Última atualização: {fetched_at.strftime('%Y-%m-%d %H:%M UTC')}")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    return group
+
+
 @app_commands.command(name="report", description="Reportar uma mensagem aos mods")
 @app_commands.describe(
     message_link="Link da mensagem (clique-direito → Copy Message Link)",
@@ -257,6 +493,7 @@ _CHANNEL_KEY_CHOICES = [
     app_commands.Choice(name="welcome", value="DISCORD_WELCOME_CHANNEL_ID"),
     app_commands.Choice(name="mods", value="DISCORD_MODS_CHANNEL_ID"),
     app_commands.Choice(name="review", value="DISCORD_REVIEW_CHANNEL_ID"),
+    app_commands.Choice(name="challenges", value="DISCORD_CHALLENGES_CHANNEL_ID"),
 ]
 
 # Non-channel, non-secret editable keys exposed via /config set + unset.
@@ -265,6 +502,8 @@ _PLAIN_KEY_CHOICES = [
     app_commands.Choice(name="auto-thread", value="ACELERADO_AUTO_THREAD"),
     app_commands.Choice(name="live-reminder-min", value="ACELERADO_LIVE_REMINDER_MINUTES"),
     app_commands.Choice(name="apoiadores-whitelist", value="ACELERADO_APOIADORES_WHITELIST"),
+    app_commands.Choice(name="challenges-enabled", value="ACELERADO_CHALLENGES_ENABLED"),
+    app_commands.Choice(name="challenges-repo", value="ACELERADO_CHALLENGES_REPO"),
 ]
 
 # Union for /config unset (covers every editable key).
@@ -390,4 +629,5 @@ def register_commands(
     tree.add_command(cmd_preview_summary, guild=guild)
     tree.add_command(cmd_preview_stale, guild=guild)
     tree.add_command(cmd_godbolt, guild=guild)
+    tree.add_command(_build_desafio_group(), guild=guild)
     tree.add_command(_build_config_group(), guild=guild)

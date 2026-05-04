@@ -407,6 +407,399 @@ async def test_config_unset_reverts_to_fallback(chdir_tmp):
     assert get_settings().cfg.ACELERADO_TICK_SECONDS == 300  # back to default
 
 
+# ---------------------------------------------------------------------------
+# /desafio — Phase 1 of issue #37
+# ---------------------------------------------------------------------------
+
+
+def test_register_desafio_group():
+    tree = _build_tree()
+    guild = discord.Object(id=1)
+    register_commands(tree, guild=guild)
+    cmd = tree.get_command("desafio", guild=guild)
+    assert cmd is not None
+    assert isinstance(cmd, app_commands.Group)
+    sub_names = {c.name for c in cmd.commands}
+    assert sub_names == {"status", "resultados", "resultados-skip", "historico"}
+
+
+def _get_desafio_subcommand(name: str):
+    tree = _build_tree()
+    guild = discord.Object(id=1)
+    register_commands(tree, guild=guild)
+    group = tree.get_command("desafio", guild=guild)
+    assert isinstance(group, app_commands.Group)
+    for cmd in group.commands:
+        if cmd.name == name:
+            return cmd
+    raise AssertionError(f"subcommand {name!r} not registered")
+
+
+async def test_desafio_responds_when_disabled(monkeypatch):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "false")
+    from acelerado.config import reload_settings
+    from acelerado.slash import _render_status
+
+    reload_settings()
+
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.response = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await _render_status(interaction)
+    interaction.response.send_message.assert_awaited_once()
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "não estão habilitados" in msg.lower() or "habilitados" in msg.lower()
+
+
+async def test_desafio_returns_embed_when_active(monkeypatch):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "true")
+    from acelerado.challenges import github as challenge_github
+    from acelerado.challenges.spec import load_spec
+    from acelerado.config import reload_settings
+    from acelerado.slash import _render_status
+
+    reload_settings()
+
+    spec = load_spec(
+        {
+            "name": "deblur",
+            "title": "arrumando autofoco",
+            "month": "2026-05",
+            "primary_metric": "psnr_mean_db",
+            "direction": "max",
+            "caps": {"time_ms_per_image": 200, "peak_rss_mb": 64},
+        }
+    )
+
+    async def fake_find(repo, month, token=None):
+        return spec
+
+    async def fake_count(repo, token=None):
+        return 7
+
+    monkeypatch.setattr(challenge_github, "find_current_spec", fake_find)
+    monkeypatch.setattr(challenge_github, "count_open_submissions", fake_count)
+
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.response = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+
+    await _render_status(interaction)
+    interaction.response.defer.assert_awaited_once()
+    interaction.followup.send.assert_awaited_once()
+    embed = interaction.followup.send.await_args.kwargs.get("embed")
+    assert isinstance(embed, discord.Embed)
+    assert "arrumando autofoco" in (embed.title or "")
+    assert embed.url == spec.site_url
+    # Submissions count + PR link landed in a dedicated field.
+    submissions_field = next((f for f in embed.fields if f.name == "Submissões"), None)
+    assert submissions_field is not None
+    assert "7" in (submissions_field.value or "")
+    assert "/pulls" in (submissions_field.value or "")
+
+
+async def test_desafio_renders_when_submission_count_fails(monkeypatch):
+    """A flaky GitHub call on ``count_open_submissions`` must not break the embed."""
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "true")
+    from acelerado.challenges import github as challenge_github
+    from acelerado.challenges.spec import load_spec
+    from acelerado.config import reload_settings
+    from acelerado.slash import _render_status
+
+    reload_settings()
+
+    spec = load_spec(
+        {
+            "name": "deblur",
+            "title": "arrumando autofoco",
+            "month": "2026-05",
+            "primary_metric": "psnr_mean_db",
+            "direction": "max",
+            "caps": {},
+        }
+    )
+
+    async def fake_find(repo, month, token=None):
+        return spec
+
+    async def fake_count_boom(repo, token=None):
+        raise challenge_github.GitHubError("rate limited")
+
+    monkeypatch.setattr(challenge_github, "find_current_spec", fake_find)
+    monkeypatch.setattr(challenge_github, "count_open_submissions", fake_count_boom)
+
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.response = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+
+    await _render_status(interaction)
+    embed = interaction.followup.send.await_args.kwargs.get("embed")
+    assert embed is not None
+    submissions_field = next((f for f in embed.fields if f.name == "Submissões"), None)
+    assert submissions_field is not None
+    assert "indisponível" in (submissions_field.value or "")
+
+
+async def test_desafio_handles_missing_challenge(monkeypatch):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "true")
+    from acelerado.challenges import github as challenge_github
+    from acelerado.config import reload_settings
+    from acelerado.slash import _render_status
+
+    reload_settings()
+
+    async def fake_find(repo, month, token=None):
+        return None
+
+    monkeypatch.setattr(challenge_github, "find_current_spec", fake_find)
+
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.response = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+
+    await _render_status(interaction)
+    msg = interaction.followup.send.await_args.args[0]
+    assert "Nenhum desafio" in msg
+
+
+async def test_desafio_reports_github_errors(monkeypatch):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "true")
+    from acelerado.challenges import github as challenge_github
+    from acelerado.config import reload_settings
+    from acelerado.slash import _render_status
+
+    reload_settings()
+
+    async def fake_find(repo, month, token=None):
+        raise challenge_github.GitHubError("404 from /repos/...")
+
+    monkeypatch.setattr(challenge_github, "find_current_spec", fake_find)
+
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.response = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+
+    await _render_status(interaction)
+    msg = interaction.followup.send.await_args.args[0]
+    assert "GitHub" in msg
+    assert "404" in msg
+
+
+# ---------------------------------------------------------------------------
+# /desafio resultados / resultados-skip / historico (Phase 3)
+# ---------------------------------------------------------------------------
+
+
+def _admin_interaction_with_bot(bot):
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.client = bot
+    interaction.response = MagicMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+async def test_desafio_resultados_warns_when_review_channel_unset(monkeypatch):
+    monkeypatch.delenv("DISCORD_REVIEW_CHANNEL_ID", raising=False)
+    monkeypatch.setenv("DISCORD_CHALLENGES_CHANNEL_ID", "999")
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "true")
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    cmd = _get_desafio_subcommand("resultados")
+    interaction = _admin_interaction_with_bot(MagicMock())
+    await cmd.callback(interaction, slug="2026-05-deblur")
+
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "REVIEW_CHANNEL_ID" in msg
+
+
+async def test_desafio_resultados_warns_when_target_channel_unset(monkeypatch):
+    monkeypatch.setenv("DISCORD_REVIEW_CHANNEL_ID", "555")
+    monkeypatch.delenv("DISCORD_CHALLENGES_CHANNEL_ID", raising=False)
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    cmd = _get_desafio_subcommand("resultados")
+    interaction = _admin_interaction_with_bot(MagicMock())
+    await cmd.callback(interaction, slug="2026-05-deblur")
+
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "CHALLENGES_CHANNEL_ID" in msg
+
+
+async def test_desafio_resultados_404_returns_friendly_message(monkeypatch):
+    monkeypatch.setenv("DISCORD_REVIEW_CHANNEL_ID", "555")
+    monkeypatch.setenv("DISCORD_CHALLENGES_CHANNEL_ID", "999")
+    from acelerado.challenges import github as challenge_github
+    from acelerado.config import reload_settings
+
+    reload_settings()
+
+    async def fake_fetch(repo, slug, token=None):
+        return None
+
+    monkeypatch.setattr(challenge_github, "fetch_results", fake_fetch)
+
+    fake_review = MagicMock(spec=discord.TextChannel)
+    fake_review.send = AsyncMock()
+    bot = MagicMock()
+    bot.get_channel.side_effect = lambda cid: fake_review if cid == 555 else None
+
+    cmd = _get_desafio_subcommand("resultados")
+    interaction = _admin_interaction_with_bot(bot)
+    await cmd.callback(interaction, slug="2026-05-deblur")
+
+    msg = interaction.followup.send.await_args.args[0]
+    assert "não existe" in msg
+    fake_review.send.assert_not_awaited()
+
+
+async def test_desafio_resultados_posts_draft_with_view(monkeypatch, chdir_tmp):
+    monkeypatch.setenv("DISCORD_REVIEW_CHANNEL_ID", "555")
+    monkeypatch.setenv("DISCORD_CHALLENGES_CHANNEL_ID", "999")
+    from acelerado.challenges import github as challenge_github
+    from acelerado.challenges.results import load_results
+    from acelerado.challenges.state import ChallengesState
+    from acelerado.config import reload_settings
+    from acelerado.review import EditableDraftView
+
+    reload_settings()
+
+    results = load_results(
+        {
+            "slug": "2026-05-deblur",
+            "primary_metric": "psnr_mean_db",
+            "direction": "max",
+            "ranking": [{"rank": 1, "user": "alice", "metrics": {"psnr_mean_db": 41.2}}],
+        }
+    )
+
+    async def fake_fetch(repo, slug, token=None):
+        return results
+
+    monkeypatch.setattr(challenge_github, "fetch_results", fake_fetch)
+
+    fake_review = MagicMock(spec=discord.TextChannel)
+    fake_review.send = AsyncMock()
+    bot = MagicMock()
+    bot.get_channel.side_effect = lambda cid: fake_review if cid == 555 else None
+
+    cmd = _get_desafio_subcommand("resultados")
+    interaction = _admin_interaction_with_bot(bot)
+    await cmd.callback(interaction, slug="2026-05-deblur")
+
+    fake_review.send.assert_awaited_once()
+    kwargs = fake_review.send.await_args.kwargs
+    assert "@alice" in kwargs.get("content", "")
+    assert isinstance(kwargs.get("view"), EditableDraftView)
+    assert kwargs["view"].target_channel_id == 999
+
+    # State now flags the slug as posted, killing the reminder.
+    assert ChallengesState().is_results_posted("2026-05-deblur")
+
+
+async def test_desafio_resultados_skip_marks_dismissed(monkeypatch, chdir_tmp):
+    from acelerado.challenges.state import ChallengesState
+
+    cmd = _get_desafio_subcommand("resultados-skip")
+    interaction = _admin_interaction_with_bot(MagicMock())
+    await cmd.callback(interaction, slug="2026-05-deblur")
+
+    assert ChallengesState().is_results_dismissed("2026-05-deblur")
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "silenciados" in msg
+
+
+async def test_desafio_historico_renders_embed(monkeypatch):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "true")
+    from datetime import UTC, datetime
+
+    from acelerado.challenges import github as challenge_github
+    from acelerado.challenges.results import load_results
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    challenge_github.clear_history_cache()
+
+    history = [
+        load_results(
+            {
+                "slug": "2026-05-deblur",
+                "primary_metric": "psnr_mean_db",
+                "direction": "max",
+                "ranking": [
+                    {"rank": 1, "user": "alice", "metrics": {"psnr_mean_db": 41.2}},
+                    {"rank": 2, "user": "bob", "metrics": {"psnr_mean_db": 39.8}},
+                ],
+            }
+        ),
+    ]
+    fixed_now = datetime(2026, 6, 5, 14, 23, tzinfo=UTC)
+
+    async def fake_get(repo, ttl=None, token=None):
+        return history, fixed_now
+
+    monkeypatch.setattr(challenge_github, "get_cached_history", fake_get)
+
+    cmd = _get_desafio_subcommand("historico")
+    interaction = _admin_interaction_with_bot(MagicMock())
+    await cmd.callback(interaction)
+
+    embed = interaction.followup.send.await_args.kwargs.get("embed")
+    assert embed is not None
+    field = embed.fields[0]
+    assert "2026-05-deblur" in field.name
+    assert "@alice" in (field.value or "")
+    # Footer carries the freshness timestamp.
+    assert "2026-06-05" in (embed.footer.text or "")
+
+
+async def test_desafio_historico_blocked_when_disabled(monkeypatch):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "false")
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    cmd = _get_desafio_subcommand("historico")
+    interaction = _admin_interaction_with_bot(MagicMock())
+    await cmd.callback(interaction)
+    interaction.response.send_message.assert_awaited_once()
+
+
+async def test_desafio_historico_handles_empty(monkeypatch):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "true")
+    from datetime import UTC, datetime
+
+    from acelerado.challenges import github as challenge_github
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    challenge_github.clear_history_cache()
+
+    async def fake_get(repo, ttl=None, token=None):
+        return [], datetime.now(UTC)
+
+    monkeypatch.setattr(challenge_github, "get_cached_history", fake_get)
+
+    cmd = _get_desafio_subcommand("historico")
+    interaction = _admin_interaction_with_bot(MagicMock())
+    await cmd.callback(interaction)
+
+    msg = interaction.followup.send.await_args.args[0]
+    assert "Ainda não há resultados" in msg
+
+
 async def test_update_command_ok_schedules_restart(monkeypatch):
     import asyncio
 

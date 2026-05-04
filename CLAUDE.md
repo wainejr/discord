@@ -38,6 +38,12 @@ acelerado/
   config.py       # Settings overlay — config.json on top of EnvCfg
                   # (atomic write, set/unset/reload, secret-key guard)
   log.py          # setup_logging() with RichHandler
+  challenges/     # monthly performance-challenge integration (issue #37)
+    spec.py       #   pydantic Spec for spec.json (extra="allow")
+    github.py     #   async httpx client for the desafios repo + history cache
+    state.py      #   challenges_state.json — announce + results posted/dismissed/last_remind
+    announce.py   #   metric-aware announcement copy renderer
+    results.py    #   pydantic Results + metric-aware results post renderer (Phase 3)
 scripts/
   send_token.sh   # SCP token.pickle to a remote host
 .github/workflows/
@@ -69,6 +75,11 @@ token.pickle      # cached OAuth user token
    - Skip if not yet processed (unless it's a livestream).
    - Skip vertical videos (Shorts).
    - Message wording differs for livestream / members-only / regular video.
+4. **Monthly challenges** (issue #37) — gated by `ACELERADO_CHALLENGES_ENABLED`. Two tick steps:
+   - `_announce_new_challenge` (Phase 1): on the configured day/hour, query the `wainejr/acelerado-desafios` repo via the GitHub REST API, locate the `YYYY-MM-*` folder for the current month, fetch its `spec.json`, and post a metric-aware announcement in `DISCORD_CHALLENGES_CHANNEL_ID`. Idempotency lives in `challenges_state.json` (slug-keyed, not month-keyed).
+   - `_remind_pending_results` (Phase 3): for every challenge folder whose `YYYY-MM` is in the past and which is neither posted nor dismissed in state, post a 1×/24h reminder in the **log channel** so the operator gets nudged to run `/desafio resultados <slug>` (or `/desafio resultados-skip <slug>` to mute).
+
+   `/desafio` is a slash group: `status` (current challenge + open-PR count, public), `resultados <slug>` (admin — fetches `results.json`, renders metric-aware draft, posts to `DISCORD_REVIEW_CHANNEL_ID` with the editorial `EditableDraftView`), `resultados-skip <slug>` (admin — silences reminders), `historico` (top-3 of past challenges, 6h cache, footer shows last fetch).
 
 ## Required env (`.env`)
 

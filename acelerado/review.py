@@ -1,18 +1,19 @@
-"""Weekly summary + apoiadores-stale report — both posted to a private
-review channel for human approval before any public action.
+"""Editorial review primitives + weekly summary / stale-apoiadores reports.
 
 Design split:
 - **Builders** (``build_weekly_summary_text``, ``find_stale_apoiadores``)
   are pure / easy to test offline. They take data and return strings or
   member lists.
 - **Posters** (``post_weekly_summary_draft``, ``post_stale_report``)
-  are the async coroutines the bot's scheduled tasks call. They build,
-  post, and (for the weekly summary) attach a ``WeeklySummaryView`` for
-  human approval.
+  are the async coroutines the bot's scheduled tasks / admin slashes
+  call. They build, post, and (for any draft that needs approval)
+  attach an :class:`EditableDraftView` for human review.
+- **View** (:class:`EditableDraftView`) is the generic 3-button
+  Aprovar / Editar / Descartar surface — used by the weekly summary and
+  the monthly-challenge results draft (issue #37 Phase 3).
 
-The ``WeeklySummaryView`` is non-persistent (24h timeout); if the bot
-restarts mid-review, the buttons go dead — admins can re-trigger via
-``/preview-summary``.
+The view is non-persistent (24h timeout); if the bot restarts
+mid-review, the buttons go dead and the operator must re-trigger.
 """
 
 from __future__ import annotations
@@ -123,7 +124,7 @@ def format_stale_report(members: list[discord.Member]) -> str:
 # ---------------------------------------------------------------------------
 
 
-class _EditModal(ui.Modal, title="Editar resumo"):
+class _EditModal(ui.Modal):
     new_text: ui.TextInput = ui.TextInput(
         label="Texto",
         style=discord.TextStyle.paragraph,
@@ -131,8 +132,8 @@ class _EditModal(ui.Modal, title="Editar resumo"):
         max_length=3500,
     )
 
-    def __init__(self, parent: WeeklySummaryView) -> None:
-        super().__init__()
+    def __init__(self, parent: EditableDraftView, modal_title: str = "Editar texto") -> None:
+        super().__init__(title=modal_title)
         self.parent = parent
         self.new_text.default = parent.draft_text
 
@@ -144,13 +145,26 @@ class _EditModal(ui.Modal, title="Editar resumo"):
         await interaction.response.defer()
 
 
-class WeeklySummaryView(ui.View):
-    """Three-button view shown alongside the draft summary."""
+class EditableDraftView(ui.View):
+    """Generic Aprovar / Editar / Descartar surface for any review draft.
 
-    def __init__(self, draft_text: str, announce_channel_id: int) -> None:
+    ``draft_text`` is shown verbatim and editable via the modal.
+    ``target_channel_id`` is where the approved draft is sent. The
+    modal title is configurable so the surface can read sensibly for
+    different drafts (resumo semanal, resultados do desafio, …).
+    """
+
+    def __init__(
+        self,
+        draft_text: str,
+        target_channel_id: int,
+        *,
+        modal_title: str = "Editar texto",
+    ) -> None:
         super().__init__(timeout=24 * 60 * 60)  # 24h
         self.draft_text = draft_text
-        self.announce_channel_id = announce_channel_id
+        self.target_channel_id = target_channel_id
+        self.modal_title = modal_title
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         # Only mods (manage_messages) can act. discord.py auto-replies if False.
@@ -170,13 +184,13 @@ class WeeklySummaryView(ui.View):
         _button: ui.Button,
     ) -> None:
         bot = cast(commands.Bot, interaction.client)
-        announce_channel = bot.get_channel(self.announce_channel_id)
-        if not isinstance(announce_channel, discord.abc.Messageable):
+        target_channel = bot.get_channel(self.target_channel_id)
+        if not isinstance(target_channel, discord.abc.Messageable):
             await interaction.response.send_message(
-                "⚠️ Canal de anúncios não acessível.", ephemeral=True
+                "⚠️ Canal de destino não acessível.", ephemeral=True
             )
             return
-        await announce_channel.send(self.draft_text)
+        await target_channel.send(self.draft_text)
         if interaction.message is not None:
             await interaction.message.edit(content=f"✅ APROVADO\n\n{self.draft_text}", view=None)
         await interaction.response.send_message("Postado!", ephemeral=True)
@@ -188,7 +202,7 @@ class WeeklySummaryView(ui.View):
         interaction: discord.Interaction,
         _button: ui.Button,
     ) -> None:
-        await interaction.response.send_modal(_EditModal(self))
+        await interaction.response.send_modal(_EditModal(self, self.modal_title))
 
     @ui.button(label="🚫 Descartar", style=discord.ButtonStyle.danger)
     async def discard(
@@ -231,7 +245,11 @@ async def post_weekly_summary_draft(bot: commands.Bot) -> str:
             logger.warning(f"Could not fetch video {vid} for summary: {exc}")
 
     draft = build_weekly_summary_text(full_videos)
-    view = WeeklySummaryView(draft, cfg.DISCORD_ANNOUNCE_CHANNEL_ID)
+    view = EditableDraftView(
+        draft,
+        cfg.DISCORD_ANNOUNCE_CHANNEL_ID,
+        modal_title="Editar resumo",
+    )
     await review_channel.send(content=draft, view=view)
     return "✅ Rascunho postado no canal de review."
 
