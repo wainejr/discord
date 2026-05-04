@@ -195,3 +195,84 @@ async def test_announce_persists_across_state_instances(
     fresh = state_mod.AceleradoState(fake_bot)
     await fresh._announce_new_challenge()
     assert challenges_channel.send.await_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — _remind_pending_results
+# ---------------------------------------------------------------------------
+
+
+async def _patch_slugs(monkeypatch, slugs):
+    async def fake_list(repo, token=None):
+        return list(slugs)
+
+    monkeypatch.setattr(challenge_github, "list_challenge_slugs", fake_list)
+
+
+async def test_reminder_skipped_when_disabled(state_with_challenges, monkeypatch, fake_guild):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "false")
+    from acelerado.config import reload_settings
+
+    reload_settings()
+
+    _patch_now(monkeypatch, datetime(2026, 6, 5, 12, tzinfo=UTC))
+    await _patch_slugs(monkeypatch, ["2026-05-deblur"])
+
+    await state_with_challenges._remind_pending_results()
+    fake_guild._log.send.assert_not_awaited()
+
+
+async def test_reminder_posts_for_past_month_slug(state_with_challenges, monkeypatch, fake_guild):
+    _patch_now(monkeypatch, datetime(2026, 6, 5, 12, tzinfo=UTC))
+    await _patch_slugs(monkeypatch, ["2026-05-deblur", "2026-06-active"])
+
+    await state_with_challenges._remind_pending_results()
+
+    fake_guild._log.send.assert_awaited_once()
+    msg = fake_guild._log.send.await_args.args[0]
+    # Active month (2026-06) should NOT be nudged.
+    assert "2026-05-deblur" in msg
+    assert "2026-06-active" not in msg
+
+
+async def test_reminder_skips_slugs_already_posted(state_with_challenges, monkeypatch, fake_guild):
+    state_with_challenges.challenges.mark_results_posted("2026-05-deblur")
+    _patch_now(monkeypatch, datetime(2026, 6, 5, 12, tzinfo=UTC))
+    await _patch_slugs(monkeypatch, ["2026-05-deblur"])
+
+    await state_with_challenges._remind_pending_results()
+    fake_guild._log.send.assert_not_awaited()
+
+
+async def test_reminder_skips_slugs_dismissed(state_with_challenges, monkeypatch, fake_guild):
+    state_with_challenges.challenges.mark_results_dismissed("2026-05-deblur")
+    _patch_now(monkeypatch, datetime(2026, 6, 5, 12, tzinfo=UTC))
+    await _patch_slugs(monkeypatch, ["2026-05-deblur"])
+
+    await state_with_challenges._remind_pending_results()
+    fake_guild._log.send.assert_not_awaited()
+
+
+async def test_reminder_rate_limited_to_24h(state_with_challenges, monkeypatch, fake_guild):
+    _patch_now(monkeypatch, datetime(2026, 6, 5, 12, tzinfo=UTC))
+    await _patch_slugs(monkeypatch, ["2026-05-deblur"])
+
+    await state_with_challenges._remind_pending_results()
+    await state_with_challenges._remind_pending_results()
+
+    # Two ticks within the cooldown window — only one reminder.
+    assert fake_guild._log.send.await_count == 1
+
+
+async def test_reminder_swallows_github_errors(state_with_challenges, monkeypatch, fake_guild):
+    _patch_now(monkeypatch, datetime(2026, 6, 5, 12, tzinfo=UTC))
+
+    async def boom(repo, token=None):
+        raise challenge_github.GitHubError("rate limited")
+
+    monkeypatch.setattr(challenge_github, "list_challenge_slugs", boom)
+
+    # Must NOT raise — the tick wraps each step in try/except, but we
+    # still want this step to handle expected errors locally.
+    await state_with_challenges._remind_pending_results()
+    fake_guild._log.send.assert_not_awaited()

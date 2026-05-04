@@ -343,6 +343,47 @@ class AceleradoState:
         metrics.increment("challenges_announced", context=spec.slug)
         logger.info(f"Announced challenge {spec.slug}")
 
+    async def _remind_pending_results(self) -> None:
+        """Nudge the operator (in the log channel) to post results for past challenges.
+
+        A "ripe" slug is one whose ``YYYY-MM`` is strictly before the
+        current month and which is neither posted nor dismissed in the
+        challenges state. We rate-limit reminders to once per 24h per
+        slug so the log channel doesn't get spammy on a 5-minute tick.
+        """
+        cfg = get_env()
+        if not cfg.ACELERADO_CHALLENGES_ENABLED:
+            return
+
+        log_channel = self.channel_log
+        if log_channel is None:
+            return
+
+        now = datetime.now(UTC)
+        current_month = now.strftime("%Y-%m")
+
+        try:
+            slugs = await challenge_github.list_challenge_slugs(
+                cfg.ACELERADO_CHALLENGES_REPO,
+            )
+        except challenge_github.GitHubError as exc:
+            logger.warning(f"Could not list challenges for reminder: {exc}")
+            return
+
+        for slug in slugs:
+            month = challenge_github.slug_month(slug)
+            if month is None or month >= current_month:
+                continue  # active or future month — no nudge yet
+            if not self.challenges.should_remind(slug):
+                continue
+            await log_channel.send(
+                f"📋 Resultados de **{slug}** pendentes. "
+                f"Use `/desafio resultados {slug}` quando rodar os benchmarks, "
+                f"ou `/desafio resultados-skip {slug}` pra parar de avisar."
+            )
+            self.challenges.mark_reminded(slug)
+            logger.info(f"Posted results reminder for {slug}")
+
     async def event_loop(self) -> None:
         logger.info("Started event loop...")
 
@@ -352,6 +393,7 @@ class AceleradoState:
             ("upcoming_lives", self._check_upcoming_lives),
             ("videos", self._pub_new_videos),
             ("challenge_announce", self._announce_new_challenge),
+            ("challenge_results_reminder", self._remind_pending_results),
         ]
         for name, step in steps:
             try:

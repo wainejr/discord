@@ -164,6 +164,128 @@ async def test_count_open_submissions_raises_on_non_list_payload():
         await gh.count_open_submissions(REPO)
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 — fetch_results / list_past_results / get_cached_history
+# ---------------------------------------------------------------------------
+
+
+RESULTS_PAYLOAD = {
+    "slug": "2026-05-deblur",
+    "primary_metric": "psnr_mean_db",
+    "direction": "max",
+    "ranking": [{"rank": 1, "user": "alice", "metrics": {"psnr_mean_db": 41.2}}],
+}
+
+
+@respx.mock
+async def test_fetch_results_returns_parsed_payload():
+    url = f"https://raw.githubusercontent.com/{REPO}/HEAD/2026-05-deblur/results.json"
+    respx.get(url).mock(return_value=httpx.Response(200, json=RESULTS_PAYLOAD))
+
+    results = await gh.fetch_results(REPO, "2026-05-deblur")
+    assert results is not None
+    assert results.slug == "2026-05-deblur"
+    assert results.ranking[0].user == "alice"
+
+
+@respx.mock
+async def test_fetch_results_returns_none_on_404():
+    url = f"https://raw.githubusercontent.com/{REPO}/HEAD/2026-06-foo/results.json"
+    respx.get(url).mock(return_value=httpx.Response(404, text="not found"))
+    assert await gh.fetch_results(REPO, "2026-06-foo") is None
+
+
+@respx.mock
+async def test_fetch_results_raises_on_other_http_errors():
+    url = f"https://raw.githubusercontent.com/{REPO}/HEAD/2026-05-deblur/results.json"
+    respx.get(url).mock(return_value=httpx.Response(500, text="boom"))
+    with pytest.raises(gh.GitHubError, match="500"):
+        await gh.fetch_results(REPO, "2026-05-deblur")
+
+
+@respx.mock
+async def test_list_past_results_collects_only_existing_files():
+    respx.get(f"{gh.API_BASE}/repos/{REPO}/contents").mock(
+        return_value=httpx.Response(200, json=_contents_payload())
+    )
+    # 2026-05-deblur has results, 2026-04-mandelbrot doesn't.
+    respx.get(f"https://raw.githubusercontent.com/{REPO}/HEAD/2026-05-deblur/results.json").mock(
+        return_value=httpx.Response(200, json=RESULTS_PAYLOAD)
+    )
+    respx.get(
+        f"https://raw.githubusercontent.com/{REPO}/HEAD/2026-04-mandelbrot/results.json"
+    ).mock(return_value=httpx.Response(404, text="not yet"))
+
+    history = await gh.list_past_results(REPO)
+    assert len(history) == 1
+    assert history[0].slug == "2026-05-deblur"
+
+
+@respx.mock
+async def test_list_past_results_orders_most_recent_first():
+    contents = [
+        {"name": "2026-04-mandelbrot", "type": "dir"},
+        {"name": "2026-05-deblur", "type": "dir"},
+    ]
+    respx.get(f"{gh.API_BASE}/repos/{REPO}/contents").mock(
+        return_value=httpx.Response(200, json=contents)
+    )
+    payload_05 = dict(RESULTS_PAYLOAD)
+    payload_04 = {
+        "slug": "2026-04-mandelbrot",
+        "primary_metric": "time_ms",
+        "direction": "min",
+        "ranking": [],
+    }
+    respx.get(f"https://raw.githubusercontent.com/{REPO}/HEAD/2026-05-deblur/results.json").mock(
+        return_value=httpx.Response(200, json=payload_05)
+    )
+    respx.get(
+        f"https://raw.githubusercontent.com/{REPO}/HEAD/2026-04-mandelbrot/results.json"
+    ).mock(return_value=httpx.Response(200, json=payload_04))
+
+    history = await gh.list_past_results(REPO)
+    assert [r.slug for r in history] == ["2026-05-deblur", "2026-04-mandelbrot"]
+
+
+@respx.mock
+async def test_get_cached_history_returns_fresh_then_cached():
+    from datetime import timedelta
+
+    gh.clear_history_cache()
+    respx.get(f"{gh.API_BASE}/repos/{REPO}/contents").mock(
+        return_value=httpx.Response(200, json=[{"name": "2026-05-deblur", "type": "dir"}])
+    )
+    raw_route = respx.get(
+        f"https://raw.githubusercontent.com/{REPO}/HEAD/2026-05-deblur/results.json"
+    ).mock(return_value=httpx.Response(200, json=RESULTS_PAYLOAD))
+
+    first, t1 = await gh.get_cached_history(REPO, ttl=timedelta(hours=6))
+    second, t2 = await gh.get_cached_history(REPO, ttl=timedelta(hours=6))
+    assert [r.slug for r in first] == [r.slug for r in second]
+    # Cache returned same timestamp, didn't refetch raw.
+    assert t1 == t2
+    assert raw_route.call_count == 1
+
+
+@respx.mock
+async def test_get_cached_history_refreshes_after_ttl():
+    from datetime import timedelta
+
+    gh.clear_history_cache()
+    respx.get(f"{gh.API_BASE}/repos/{REPO}/contents").mock(
+        return_value=httpx.Response(200, json=[{"name": "2026-05-deblur", "type": "dir"}])
+    )
+    raw_route = respx.get(
+        f"https://raw.githubusercontent.com/{REPO}/HEAD/2026-05-deblur/results.json"
+    ).mock(return_value=httpx.Response(200, json=RESULTS_PAYLOAD))
+
+    await gh.get_cached_history(REPO, ttl=timedelta(seconds=0))
+    await gh.get_cached_history(REPO, ttl=timedelta(seconds=0))
+    # zero TTL means every call is a miss.
+    assert raw_route.call_count == 2
+
+
 def test_slug_month_extracts_prefix():
     assert gh.slug_month("2026-05-deblur") == "2026-05"
     assert gh.slug_month("2026-12-foo-bar") == "2026-12"

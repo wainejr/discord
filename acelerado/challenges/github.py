@@ -16,10 +16,12 @@ from __future__ import annotations
 import logging
 import os
 import re
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 
+from acelerado.challenges.results import Results, load_results
 from acelerado.challenges.spec import Spec, load_spec
 
 logger = logging.getLogger(__name__)
@@ -154,6 +156,92 @@ async def find_current_spec(
         if slug_month(slug) == month:
             return await fetch_spec(repo, slug, token=token)
     return None
+
+
+async def fetch_results(
+    repo: str,
+    slug: str,
+    token: str | None = None,
+) -> Results | None:
+    """Fetch and validate ``<slug>/results.json``.
+
+    Returns ``None`` when the file doesn't exist (404 from raw) — that's
+    a normal state during the active month before benchmarks have run.
+    Other HTTP / JSON errors raise :class:`GitHubError`.
+    """
+    token = _resolve_token(token)
+    url = f"https://raw.githubusercontent.com/{repo}/HEAD/{slug}/results.json"
+    async with httpx.AsyncClient(
+        headers=_headers(token),
+        timeout=DEFAULT_TIMEOUT,
+    ) as client:
+        try:
+            response = await client.get(url)
+        except httpx.HTTPError as exc:
+            raise GitHubError(f"network error fetching {url}: {exc}") from exc
+        if response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            raise GitHubError(f"{response.status_code} from {url}: {response.text[:200]}")
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise GitHubError(f"invalid JSON from {url}: {exc}") from exc
+    return load_results(data)
+
+
+async def list_past_results(repo: str, token: str | None = None) -> list[Results]:
+    """Return every ``results.json`` found under the repo's challenge folders.
+
+    Slugs that don't have a ``results.json`` yet are skipped silently —
+    typical for the active month. Order: most-recent slug first
+    (lexicographic on ``YYYY-MM`` sorts chronologically).
+    """
+    slugs = await list_challenge_slugs(repo, token=token)
+    out: list[Results] = []
+    for slug in sorted(slugs, reverse=True):
+        results = await fetch_results(repo, slug, token=token)
+        if results is not None:
+            out.append(results)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Cached historic results
+#
+# The history listing walks every challenge folder and fetches each
+# results.json — that's N+1 requests against GitHub. Caching the
+# aggregate per-repo for a few hours keeps ``/desafio historico`` snappy
+# and stays well under rate limits even with steady use.
+# ---------------------------------------------------------------------------
+
+_DEFAULT_HISTORY_TTL = timedelta(hours=6)
+_history_cache: dict[str, tuple[datetime, list[Results]]] = {}
+
+
+def clear_history_cache() -> None:
+    """Drop the in-memory cache (test helper / forced refresh)."""
+    _history_cache.clear()
+
+
+async def get_cached_history(
+    repo: str,
+    *,
+    ttl: timedelta = _DEFAULT_HISTORY_TTL,
+    token: str | None = None,
+) -> tuple[list[Results], datetime]:
+    """Return ``(results, fetched_at)`` honoring a per-repo TTL.
+
+    The timestamp travels with the data so callers can show *"última
+    atualização: …"* without re-checking the cache themselves.
+    """
+    now = datetime.now(UTC)
+    cached = _history_cache.get(repo)
+    if cached is not None and (now - cached[0]) < ttl:
+        return cached[1], cached[0]
+    fresh = await list_past_results(repo, token=token)
+    _history_cache[repo] = (now, fresh)
+    return fresh, now
 
 
 async def count_open_submissions(repo: str, token: str | None = None) -> int:
