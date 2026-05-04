@@ -187,6 +187,64 @@ async def cmd_godbolt(
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+@app_commands.command(
+    name="desafio",
+    description="Mostra o desafio de performance ativo do mês",
+)
+async def cmd_desafio(interaction: discord.Interaction) -> None:
+    from datetime import UTC, datetime
+
+    from acelerado.challenges import announce as challenge_announce
+    from acelerado.challenges import github as challenge_github
+    from acelerado.env import get_env
+
+    cfg = get_env()
+    if not cfg.ACELERADO_CHALLENGES_ENABLED:
+        await interaction.response.send_message(
+            "⚠️ Desafios mensais ainda não estão habilitados neste servidor.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    month = datetime.now(UTC).strftime("%Y-%m")
+    try:
+        spec = await challenge_github.find_current_spec(
+            cfg.ACELERADO_CHALLENGES_REPO,
+            month,
+        )
+    except challenge_github.GitHubError as exc:
+        await interaction.followup.send(
+            f"⚠️ Não consegui falar com o GitHub: `{exc}`",
+            ephemeral=True,
+        )
+        return
+
+    if spec is None:
+        await interaction.followup.send(
+            f"📭 Nenhum desafio publicado para **{month}** ainda — fica de olho.",
+            ephemeral=True,
+        )
+        return
+
+    embed = discord.Embed(
+        title=f"🏁 Desafio de {spec.month} — {spec.title}",
+        description=challenge_announce.render_short_status(spec),
+        url=spec.site_url,
+        color=discord.Color.green(),
+    )
+    if spec.caps:
+        embed.add_field(
+            name="Limites",
+            value="\n".join(
+                f"• {challenge_announce.format_cap(k, v)}" for k, v in spec.caps.items()
+            ),
+            inline=False,
+        )
+    embed.add_field(name="Enunciado", value=spec.site_url, inline=False)
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
 @app_commands.command(name="report", description="Reportar uma mensagem aos mods")
 @app_commands.describe(
     message_link="Link da mensagem (clique-direito → Copy Message Link)",
@@ -257,6 +315,7 @@ _CHANNEL_KEY_CHOICES = [
     app_commands.Choice(name="welcome", value="DISCORD_WELCOME_CHANNEL_ID"),
     app_commands.Choice(name="mods", value="DISCORD_MODS_CHANNEL_ID"),
     app_commands.Choice(name="review", value="DISCORD_REVIEW_CHANNEL_ID"),
+    app_commands.Choice(name="challenges", value="DISCORD_CHALLENGES_CHANNEL_ID"),
 ]
 
 # Non-channel, non-secret editable keys exposed via /config set + unset.
@@ -265,6 +324,8 @@ _PLAIN_KEY_CHOICES = [
     app_commands.Choice(name="auto-thread", value="ACELERADO_AUTO_THREAD"),
     app_commands.Choice(name="live-reminder-min", value="ACELERADO_LIVE_REMINDER_MINUTES"),
     app_commands.Choice(name="apoiadores-whitelist", value="ACELERADO_APOIADORES_WHITELIST"),
+    app_commands.Choice(name="challenges-enabled", value="ACELERADO_CHALLENGES_ENABLED"),
+    app_commands.Choice(name="challenges-repo", value="ACELERADO_CHALLENGES_REPO"),
 ]
 
 # Union for /config unset (covers every editable key).
@@ -390,4 +451,5 @@ def register_commands(
     tree.add_command(cmd_preview_summary, guild=guild)
     tree.add_command(cmd_preview_stale, guild=guild)
     tree.add_command(cmd_godbolt, guild=guild)
+    tree.add_command(cmd_desafio, guild=guild)
     tree.add_command(_build_config_group(), guild=guild)

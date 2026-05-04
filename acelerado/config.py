@@ -52,6 +52,7 @@ CHANNEL_KEYS: frozenset[str] = frozenset(
         "DISCORD_WELCOME_CHANNEL_ID",
         "DISCORD_MODS_CHANNEL_ID",
         "DISCORD_REVIEW_CHANNEL_ID",
+        "DISCORD_CHALLENGES_CHANNEL_ID",
     }
 )
 

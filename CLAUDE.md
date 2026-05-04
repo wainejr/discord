@@ -38,6 +38,11 @@ acelerado/
   config.py       # Settings overlay — config.json on top of EnvCfg
                   # (atomic write, set/unset/reload, secret-key guard)
   log.py          # setup_logging() with RichHandler
+  challenges/     # monthly performance-challenge integration (issue #37)
+    spec.py       #   pydantic Spec for spec.json (extra="allow")
+    github.py     #   async httpx client for the desafios repo
+    state.py      #   challenges_state.json — announce idempotency
+    announce.py   #   metric-aware copy renderer
 scripts/
   send_token.sh   # SCP token.pickle to a remote host
 .github/workflows/
@@ -69,6 +74,7 @@ token.pickle      # cached OAuth user token
    - Skip if not yet processed (unless it's a livestream).
    - Skip vertical videos (Shorts).
    - Message wording differs for livestream / members-only / regular video.
+4. **Monthly challenges** (issue #37, Phase 1) — gated by `ACELERADO_CHALLENGES_ENABLED`; on the configured day/hour, query the `wainejr/acelerado-desafios` repo via the GitHub REST API, locate the `YYYY-MM-*` folder for the current month, fetch its `spec.json`, and post a metric-aware announcement in `DISCORD_CHALLENGES_CHANNEL_ID`. Idempotency lives in `challenges_state.json` (slug-keyed, not month-keyed). `/desafio` slash command exposes the same lookup ephemerally.
 
 ## Required env (`.env`)
 

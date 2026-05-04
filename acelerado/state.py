@@ -7,6 +7,9 @@ import discord
 from discord.ext import commands
 
 from acelerado import metrics, youtube
+from acelerado.challenges import announce as challenge_announce
+from acelerado.challenges import github as challenge_github
+from acelerado.challenges.state import ChallengesState
 from acelerado.env import get_env
 from acelerado.error_reporter import ErrorReporter
 from acelerado.review import parse_username_whitelist
@@ -30,6 +33,7 @@ class AceleradoState:
         # "Long enough ago that the first warning isn't rate-limited."
         self.last_msg_expiry = datetime.now(UTC) - timedelta(days=7)
         self.error_reporter = ErrorReporter(lambda: self.channel_log)
+        self.challenges = ChallengesState()
 
         # Channel validation only — cheap cache lookup, no I/O. Network /
         # OAuth-triggering work happens in `warm_up`.
@@ -57,6 +61,16 @@ class AceleradoState:
         return cast(
             "discord.abc.Messageable | None",
             self.bot.get_channel(get_env().DISCORD_ANNOUNCE_CHANNEL_ID),
+        )
+
+    @property
+    def channel_challenges(self) -> discord.abc.Messageable | None:
+        cid = get_env().DISCORD_CHALLENGES_CHANNEL_ID
+        if not cid:
+            return None
+        return cast(
+            "discord.abc.Messageable | None",
+            self.bot.get_channel(cid),
         )
 
     # ------------------------------------------------------------------
@@ -282,6 +296,53 @@ class AceleradoState:
                     f"({youtube.video_state_flags(video)})"
                 )
 
+    # ------------------------------------------------------------------
+    # Monthly challenge announcement (issue #37, Phase 1)
+    # ------------------------------------------------------------------
+
+    async def _announce_new_challenge(self) -> None:
+        """If today's the announce day and no post yet, announce the active challenge.
+
+        Idempotent via :class:`ChallengesState` — the slug (not the
+        month) is the key, so a folder rename mid-month re-announces
+        rather than silently skipping.
+        """
+        cfg = get_env()
+        if not cfg.ACELERADO_CHALLENGES_ENABLED:
+            return
+
+        now = datetime.now(UTC)
+        if now.day != cfg.ACELERADO_CHALLENGES_ANNOUNCE_DAY:
+            return
+        if now.hour < cfg.ACELERADO_CHALLENGES_ANNOUNCE_HOUR_UTC:
+            return
+
+        channel = self.channel_challenges
+        if channel is None:
+            logger.warning(
+                "Challenges enabled but DISCORD_CHALLENGES_CHANNEL_ID not configured; "
+                "skipping announcement"
+            )
+            return
+
+        month = now.strftime("%Y-%m")
+        spec = await challenge_github.find_current_spec(
+            cfg.ACELERADO_CHALLENGES_REPO,
+            month,
+        )
+        if spec is None:
+            logger.info(f"No challenge folder found for {month}; skipping")
+            return
+
+        if self.challenges.is_announced(spec.slug):
+            return
+
+        msg = challenge_announce.render_announcement(spec)
+        await channel.send(msg)
+        self.challenges.mark_announced(spec.slug)
+        metrics.increment("challenges_announced", context=spec.slug)
+        logger.info(f"Announced challenge {spec.slug}")
+
     async def event_loop(self) -> None:
         logger.info("Started event loop...")
 
@@ -290,6 +351,7 @@ class AceleradoState:
             ("expiration", self.check_expiration),
             ("upcoming_lives", self._check_upcoming_lives),
             ("videos", self._pub_new_videos),
+            ("challenge_announce", self._announce_new_challenge),
         ]
         for name, step in steps:
             try:

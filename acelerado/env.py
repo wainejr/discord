@@ -71,6 +71,23 @@ class EnvCfg(BaseSettings):
     # the mods channel with repeated alerts for the same user.
     ACELERADO_ANTISPAM_ALERT_COOLDOWN_SECONDS: int = 600
 
+    # ------------------------------------------------------------------
+    # Monthly challenges (issue #37) — Phase 1 toggles
+    # Disabled by default until the announce channel is wired up.
+    # ------------------------------------------------------------------
+    ACELERADO_CHALLENGES_ENABLED: bool = False
+    # GitHub repo holding the monthly problem folders.
+    ACELERADO_CHALLENGES_REPO: str = "wainejr/acelerado-desafios"
+    # Channel ID where new challenges are announced. Separate from the
+    # YouTube announce channel so video posts and challenge posts can
+    # land in different topical channels.
+    DISCORD_CHALLENGES_CHANNEL_ID: int = 0
+    # Day of the month (1-28) and UTC hour the announcement step is
+    # allowed to fire. Picking after publication time avoids spamming if
+    # the maintainer pushes the spec at midnight.
+    ACELERADO_CHALLENGES_ANNOUNCE_DAY: int = 1
+    ACELERADO_CHALLENGES_ANNOUNCE_HOUR_UTC: int = 12
+
 
 def get_env() -> EnvCfg:
     """Return the merged :class:`EnvCfg`, with ``config.json`` applied on top.

@@ -39,6 +39,7 @@ class TimelineEntry(BaseModel):
 class Metrics(BaseModel):
     videos_announced: list[TimelineEntry] = Field(default_factory=list)
     members_synced: list[TimelineEntry] = Field(default_factory=list)
+    challenges_announced: list[TimelineEntry] = Field(default_factory=list)
     errors: list[TimelineEntry] = Field(default_factory=list)
     last_successful_tick: datetime | None = None
 

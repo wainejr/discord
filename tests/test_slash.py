@@ -407,6 +407,126 @@ async def test_config_unset_reverts_to_fallback(chdir_tmp):
     assert get_settings().cfg.ACELERADO_TICK_SECONDS == 300  # back to default
 
 
+# ---------------------------------------------------------------------------
+# /desafio — Phase 1 of issue #37
+# ---------------------------------------------------------------------------
+
+
+def test_register_desafio_command():
+    tree = _build_tree()
+    guild = discord.Object(id=1)
+    register_commands(tree, guild=guild)
+    cmd = tree.get_command("desafio", guild=guild)
+    assert cmd is not None
+    assert cmd.name == "desafio"
+
+
+async def test_desafio_responds_when_disabled(monkeypatch):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "false")
+    from acelerado.config import reload_settings
+    from acelerado.slash import cmd_desafio
+
+    reload_settings()
+
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.response = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await cmd_desafio.callback(interaction)
+    interaction.response.send_message.assert_awaited_once()
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "não estão habilitados" in msg.lower() or "habilitados" in msg.lower()
+
+
+async def test_desafio_returns_embed_when_active(monkeypatch):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "true")
+    from acelerado.challenges import github as challenge_github
+    from acelerado.challenges.spec import load_spec
+    from acelerado.config import reload_settings
+    from acelerado.slash import cmd_desafio
+
+    reload_settings()
+
+    spec = load_spec(
+        {
+            "name": "deblur",
+            "title": "arrumando autofoco",
+            "month": "2026-05",
+            "primary_metric": "psnr_mean_db",
+            "direction": "max",
+            "caps": {"time_ms_per_image": 200, "peak_rss_mb": 64},
+        }
+    )
+
+    async def fake_find(repo, month, token=None):
+        return spec
+
+    monkeypatch.setattr(challenge_github, "find_current_spec", fake_find)
+
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.response = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+
+    await cmd_desafio.callback(interaction)
+    interaction.response.defer.assert_awaited_once()
+    interaction.followup.send.assert_awaited_once()
+    embed = interaction.followup.send.await_args.kwargs.get("embed")
+    assert isinstance(embed, discord.Embed)
+    assert "arrumando autofoco" in (embed.title or "")
+    assert embed.url == spec.site_url
+
+
+async def test_desafio_handles_missing_challenge(monkeypatch):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "true")
+    from acelerado.challenges import github as challenge_github
+    from acelerado.config import reload_settings
+    from acelerado.slash import cmd_desafio
+
+    reload_settings()
+
+    async def fake_find(repo, month, token=None):
+        return None
+
+    monkeypatch.setattr(challenge_github, "find_current_spec", fake_find)
+
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.response = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+
+    await cmd_desafio.callback(interaction)
+    msg = interaction.followup.send.await_args.args[0]
+    assert "Nenhum desafio" in msg
+
+
+async def test_desafio_reports_github_errors(monkeypatch):
+    monkeypatch.setenv("ACELERADO_CHALLENGES_ENABLED", "true")
+    from acelerado.challenges import github as challenge_github
+    from acelerado.config import reload_settings
+    from acelerado.slash import cmd_desafio
+
+    reload_settings()
+
+    async def fake_find(repo, month, token=None):
+        raise challenge_github.GitHubError("404 from /repos/...")
+
+    monkeypatch.setattr(challenge_github, "find_current_spec", fake_find)
+
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.response = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+
+    await cmd_desafio.callback(interaction)
+    msg = interaction.followup.send.await_args.args[0]
+    assert "GitHub" in msg
+    assert "404" in msg
+
+
 async def test_update_command_ok_schedules_restart(monkeypatch):
     import asyncio
 
