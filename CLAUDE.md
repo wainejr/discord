@@ -64,7 +64,8 @@ token.pickle      # cached OAuth user token
 
 1. **`check_members_apoiadores`** — for **every** role whose name contains `"YouTube Member"` (so all tiers, not just the first match), ensure each member also has the `Registradores` role; if added, post a welcome in the `chat-registradores` channel. Members appearing in multiple tiers are deduped via a `seen` id set.
 2. **`check_expiration`** — if the YouTube OAuth token expires in <24h, post a renewal reminder to the log channel (rate-limited to once/hour).
-3. **Video announcing** — fetch the latest 10 uploads, diff against `published.txt`, and announce new ones in the announce channel with `@everyone`. Filtering rules (`should_announce_video`):
+3. **`_check_upcoming_lives`** — poll for scheduled livestreams and send a "live em N min" reminder when one falls inside `ACELERADO_LIVE_REMINDER_MINUTES`. Internally throttled by `ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS` (default 3600s) because `youtube.search.list` costs **100 quota units** per call vs. 1 for everything else — running it on every 5-min tick exceeds the default 10k/day quota by ~3x. Throttle is in-memory (`AceleradoState.last_upcoming_lives_check`); first tick after process start always runs.
+4. **Video announcing** — fetch the latest 10 uploads, diff against `published.txt`, and announce new ones in the announce channel with `@everyone`. Filtering rules (`should_announce_video`):
    - Skip if non-public (unlisted/private).
    - Skip if not yet processed (unless it's a livestream).
    - Skip vertical videos (Shorts).
@@ -74,7 +75,7 @@ token.pickle      # cached OAuth user token
 
 Required: `DISCORD_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_ANNOUNCE_CHANNEL_ID`, `DISCORD_LOG_CHANNEL_ID`, `YOUTUBE_CHANNEL_ID`, `YOUTUBE_API_KEY`.
 
-Optional: `ACELERADO_TICK_SECONDS` (loop period, default `300`), `ACELERADO_LOG_LEVEL` (`DEBUG`/`INFO`/…, default `INFO`).
+Optional: `ACELERADO_TICK_SECONDS` (loop period, default `300`), `ACELERADO_LOG_LEVEL` (`DEBUG`/`INFO`/…, default `INFO`), `ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS` (upcoming-lives poll cadence, default `3600` — see Runtime behavior #3 for the quota math).
 
 Plus `credentials.json` (Google OAuth client). First run opens a browser for consent; the resulting token is cached to `token.pickle`.
 

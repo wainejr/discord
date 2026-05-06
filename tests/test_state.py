@@ -464,6 +464,12 @@ async def test_check_upcoming_lives_skips_past_start_time(
 async def test_check_upcoming_lives_dedups_across_ticks(
     built_state, fake_guild, monkeypatch, make_video_fn, chdir_tmp
 ):
+    # Disable the interval gate so we exercise the file-based dedup.
+    monkeypatch.setenv("ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS", "0")
+    from acelerado import config as config_mod
+
+    config_mod.reload_settings()
+
     video = _scheduled_video(make_video_fn, "live1", minutes_from_now=5)
     monkeypatch.setattr(yt_mod, "get_upcoming_livestream_ids", lambda max_results=5: ["live1"])
     monkeypatch.setattr(yt_mod, "get_video_info", lambda vid: video)
@@ -476,6 +482,73 @@ async def test_check_upcoming_lives_dedups_across_ticks(
     from acelerado import state as state_mod
 
     assert "live1" in state_mod.LIVE_REMINDERS_PATH.read_text()
+
+
+async def test_check_upcoming_lives_skips_when_within_interval(
+    built_state, fake_guild, monkeypatch, make_video_fn
+):
+    """Quota-saving gate: within ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS,
+    the search.list call must not fire (search.list = 100 quota units).
+    """
+    video = _scheduled_video(make_video_fn, "live1", minutes_from_now=5)
+    calls = {"n": 0}
+
+    def _spy(max_results: int = 5):
+        calls["n"] += 1
+        return ["live1"]
+
+    monkeypatch.setattr(yt_mod, "get_upcoming_livestream_ids", _spy)
+    monkeypatch.setattr(yt_mod, "get_video_info", lambda vid: video)
+
+    # First call runs (timestamp was None).
+    await built_state._check_upcoming_lives()
+    assert calls["n"] == 1
+
+    # Second call within the 1h default — must NOT call search.list.
+    await built_state._check_upcoming_lives()
+    assert calls["n"] == 1
+
+
+async def test_check_upcoming_lives_runs_after_interval_elapsed(
+    built_state, fake_guild, monkeypatch, make_video_fn
+):
+    """Once the interval window passes, the search.list call resumes."""
+    video = _scheduled_video(make_video_fn, "live2", minutes_from_now=5)
+    calls = {"n": 0}
+
+    def _spy(max_results: int = 5):
+        calls["n"] += 1
+        return ["live2"]
+
+    monkeypatch.setattr(yt_mod, "get_upcoming_livestream_ids", _spy)
+    monkeypatch.setattr(yt_mod, "get_video_info", lambda vid: video)
+
+    # Pretend the previous run was well outside the default 3600s window.
+    built_state.last_upcoming_lives_check = datetime.now(UTC) - timedelta(hours=2)
+    await built_state._check_upcoming_lives()
+    assert calls["n"] == 1
+
+
+async def test_check_upcoming_lives_interval_zero_runs_every_tick(
+    built_state, fake_guild, monkeypatch, make_video_fn
+):
+    """Setting the interval to 0 disables the gate (escape hatch / tests)."""
+    monkeypatch.setenv("ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS", "0")
+    from acelerado import config as config_mod
+
+    config_mod.reload_settings()
+
+    calls = {"n": 0}
+
+    def _spy(max_results: int = 5):
+        calls["n"] += 1
+        return []
+
+    monkeypatch.setattr(yt_mod, "get_upcoming_livestream_ids", _spy)
+
+    await built_state._check_upcoming_lives()
+    await built_state._check_upcoming_lives()
+    assert calls["n"] == 2
 
 
 def test_should_announce_skips_scheduled_but_not_started(make_video_fn):
