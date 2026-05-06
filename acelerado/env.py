@@ -40,6 +40,13 @@ class EnvCfg(BaseSettings):
     # YouTube lives. The reminder fires once per video.
     ACELERADO_LIVE_REMINDER_MINUTES: int = 15
 
+    # How often to poll YouTube for *upcoming* livestreams. This step uses
+    # ``search.list`` which costs 100 quota units per call (vs. 1 for the
+    # other endpoints we hit), so it's gated independently from the main
+    # tick. Default of 3600s = 24 calls/day = 2400 units/day, well within
+    # the 10k daily quota even after everything else.
+    ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS: int = 3600
+
     # Channel ID where weekly summary drafts await human approval before
     # being posted publicly. Same channel works for stale-apoiadores reports
     # if you don't want a separate one.

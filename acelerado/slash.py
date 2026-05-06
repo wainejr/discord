@@ -264,6 +264,10 @@ _PLAIN_KEY_CHOICES = [
     app_commands.Choice(name="tick-seconds", value="ACELERADO_TICK_SECONDS"),
     app_commands.Choice(name="auto-thread", value="ACELERADO_AUTO_THREAD"),
     app_commands.Choice(name="live-reminder-min", value="ACELERADO_LIVE_REMINDER_MINUTES"),
+    app_commands.Choice(
+        name="upcoming-lives-interval-sec",
+        value="ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS",
+    ),
     app_commands.Choice(name="apoiadores-whitelist", value="ACELERADO_APOIADORES_WHITELIST"),
 ]
 

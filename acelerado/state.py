@@ -29,6 +29,10 @@ class AceleradoState:
         self.live_reminders = LineSetStore(LIVE_REMINDERS_PATH)
         # "Long enough ago that the first warning isn't rate-limited."
         self.last_msg_expiry = datetime.now(UTC) - timedelta(days=7)
+        # Independent throttle for the upcoming-lives poll: search.list
+        # costs 100 quota units, so we don't run it on every 5-min tick.
+        # ``None`` means "never run" — first tick will fire it.
+        self.last_upcoming_lives_check: datetime | None = None
         self.error_reporter = ErrorReporter(lambda: self.channel_log)
 
         # Channel validation only — cheap cache lookup, no I/O. Network /
@@ -239,8 +243,23 @@ class AceleradoState:
         return self.live_reminders.as_set()
 
     async def _check_upcoming_lives(self) -> None:
-        """Send a "live em N min" reminder for any scheduled live within window."""
+        """Send a "live em N min" reminder for any scheduled live within window.
+
+        ``youtube.get_upcoming_livestream_ids`` calls ``search.list``, which
+        costs 100 YouTube quota units per request — running it every 5-min
+        tick blows past the 10k/day default quota by ~3x. Gate the poll
+        behind ``ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS`` (default 1h)
+        so the cheap steps still run on every tick.
+        """
         now = datetime.now(UTC)
+        interval = timedelta(seconds=get_env().ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS)
+        if (
+            self.last_upcoming_lives_check is not None
+            and now - self.last_upcoming_lives_check < interval
+        ):
+            return
+        self.last_upcoming_lives_check = now
+
         window = timedelta(minutes=get_env().ACELERADO_LIVE_REMINDER_MINUTES)
         sent = self.live_reminders.as_set()
 
