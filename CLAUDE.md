@@ -63,7 +63,7 @@ token.pickle      # cached OAuth user token
 `AceleradoBot.setup_hook` calls `event_loop_task.change_interval(seconds=ACELERADO_TICK_SECONDS)` (default 300) and starts the loop. Its `before_loop` waits for the gateway-ready signal, then constructs `AceleradoState` once. Each tick calls `state.event_loop()`, which iterates a `[(name, step), …]` list and wraps each step in try/except → `state.report_error(name, exc)` (logs locally + posts to Discord log channel, 10-min cooldown).
 
 1. **`check_members_apoiadores`** — for **every** role whose name contains `"YouTube Member"` (so all tiers, not just the first match), ensure each member also has the `Registradores` role; if added, post a welcome in the `chat-registradores` channel. Members appearing in multiple tiers are deduped via a `seen` id set.
-2. **`check_expiration`** — if the YouTube OAuth token expires in <24h, post a renewal reminder to the log channel (rate-limited to once/hour).
+2. **`check_expiration`** — if the YouTube OAuth token expires in <24h, post a renewal reminder to the log channel (rate-limited to once/hour). Distinguishes already-expired (negative time-to-expire → "expirou há Ns") from soon-to-expire ("expira em Ns") and points the operator at `/token renew-start`.
 3. **`_check_upcoming_lives`** — poll for scheduled livestreams and send a "live em N min" reminder when one falls inside `ACELERADO_LIVE_REMINDER_MINUTES`. Internally throttled by `ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS` (default 3600s) because `youtube.search.list` costs **100 quota units** per call vs. 1 for everything else — running it on every 5-min tick exceeds the default 10k/day quota by ~3x. Throttle is in-memory (`AceleradoState.last_upcoming_lives_check`); first tick after process start always runs.
 4. **Video announcing** — fetch the latest 10 uploads, diff against `published.txt`, and announce new ones in the announce channel with `@everyone`. Filtering rules (`should_announce_video`):
    - Skip if non-public (unlisted/private).
@@ -75,7 +75,7 @@ token.pickle      # cached OAuth user token
 
 Required: `DISCORD_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_ANNOUNCE_CHANNEL_ID`, `DISCORD_LOG_CHANNEL_ID`, `YOUTUBE_CHANNEL_ID`, `YOUTUBE_API_KEY`.
 
-Optional: `ACELERADO_TICK_SECONDS` (loop period, default `300`), `ACELERADO_LOG_LEVEL` (`DEBUG`/`INFO`/…, default `INFO`), `ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS` (upcoming-lives poll cadence, default `3600` — see Runtime behavior #3 for the quota math).
+Optional: `ACELERADO_TICK_SECONDS` (loop period, default `300`), `ACELERADO_LOG_LEVEL` (`DEBUG`/`INFO`/…, default `INFO`), `ACELERADO_UPCOMING_LIVES_INTERVAL_SECONDS` (upcoming-lives poll cadence, default `3600` — see Runtime behavior #3 for the quota math), `DISCORD_OWNER_ID` (Discord user ID allowed to run `/token renew-start` and `/token renew-finish`; default `0` keeps these commands disabled).
 
 Plus `credentials.json` (Google OAuth client). First run opens a browser for consent; the resulting token is cached to `token.pickle`.
 
@@ -117,7 +117,7 @@ The token-expiry math used `datetime.now()` (naive local) against `Credentials.e
 - User-facing strings (Discord messages, role names) are in **Portuguese** — keep that when editing.
 - Hardcoded role/channel names live in `state.py` (`ROLE_NAME_APOIADORES = "Registradores"`, `CHAT_MSG_ADD = "chat-registradores"`); the YouTube member role is matched by substring `"YouTube Member"`.
 - `published.txt` is the source of truth for "already announced". It's seeded on first run from the latest 20 uploads if missing — don't delete it on a live deployment or you'll re-announce.
-- The OAuth token must be refreshed periodically; the bot itself only *warns* about expiry, it does not auto-renew the consent flow.
+- The OAuth token must be refreshed periodically; the bot itself only *warns* about expiry, it does not auto-renew the consent flow. Two ways to renew: `acelerado refresh-token` from the host (browser-based local-server flow), or `/token renew-start` + `/token renew-finish <redirect_url>` from Discord (DM with the auth URL → user pastes the loopback redirect URL back). The Discord flow is owner-gated by `DISCORD_OWNER_ID` and parks the pending `Flow` in memory for 10 min, with CSRF-state validation on completion. The previous `token.pickle` is renamed to `token.pickle.old` before writing the new one.
 - The YouTube client and upload-playlist ID are lazy-initialized via `@lru_cache` in `youtube.py` — first call triggers OAuth and the channel lookup.
 - Slash commands live in `acelerado/slash.py`. `register_commands(tree, guild=...)` is called from `bot.setup_hook` and pushed via `tree.sync(guild=...)` — guild-scoped so changes propagate instantly. To add a new slash command: define it with `@app_commands.command(...)` in `slash.py`, add `tree.add_command(new_cmd, guild=guild)` inside `register_commands`, add a registration test in `tests/test_slash.py`. The bot is otherwise event-driven (no message-prefixed commands).
 

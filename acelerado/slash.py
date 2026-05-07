@@ -376,6 +376,111 @@ def _build_config_group() -> app_commands.Group:
     return group
 
 
+# ---------------------------------------------------------------------------
+# /token — owner-only YouTube OAuth renewal
+# ---------------------------------------------------------------------------
+#
+# The two-step "DM the auth URL → paste the redirect URL back" flow keeps
+# the auth code out of any guild channel. Both subcommands gate on
+# ``DISCORD_OWNER_ID`` (not just ``Manage Server``), since rotating the
+# YouTube token is a stricter action than the other admin slashes.
+
+
+def _is_owner(interaction: discord.Interaction) -> bool:
+    from acelerado.env import get_env
+
+    owner_id = get_env().DISCORD_OWNER_ID
+    return owner_id != 0 and interaction.user.id == owner_id
+
+
+def _build_token_group() -> app_commands.Group:
+    """Build a fresh ``/token`` group bound to a single tree."""
+    group = app_commands.Group(
+        name="token",
+        description="(dono) Renovar o token OAuth do YouTube",
+    )
+
+    @group.command(
+        name="renew-start",
+        description="Inicia o fluxo de renovação — DM com o link do Google",
+    )
+    async def cmd_token_renew_start(interaction: discord.Interaction) -> None:
+        from acelerado import youtube
+
+        if not _is_owner(interaction):
+            await interaction.response.send_message(
+                "⚠️ Só o dono (`DISCORD_OWNER_ID`) pode renovar o token.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            url = youtube.start_oauth_flow(interaction.user.id)
+        except FileNotFoundError as exc:
+            await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+            return
+
+        try:
+            dm = await interaction.user.create_dm()
+            await dm.send(
+                "🔑 **Renovação do token YouTube**\n"
+                f"1. Abra: {url}\n"
+                "2. Aprove o consentimento na conta certa.\n"
+                "3. Você será redirecionado pra `http://localhost/...` — "
+                "a página *vai* falhar (esperado).\n"
+                "4. Copie a URL inteira da barra de endereços e cole em "
+                "`/token renew-finish`.\n"
+                f"⏱️ {youtube.OAUTH_PENDING_TTL_SECONDS // 60} min antes do flow expirar."
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ Não consegui enviar DM. Habilite DM de membros do servidor.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            "✅ Verifique seu DM e siga as instruções.",
+            ephemeral=True,
+        )
+
+    @group.command(
+        name="renew-finish",
+        description="Cole a URL completa do redirect (resposta privada)",
+    )
+    @app_commands.describe(
+        redirect_url="URL completa começando com http://localhost/?state=...&code=..."
+    )
+    async def cmd_token_renew_finish(
+        interaction: discord.Interaction,
+        redirect_url: str,
+    ) -> None:
+        import asyncio
+
+        from acelerado import youtube
+
+        if not _is_owner(interaction):
+            await interaction.response.send_message(
+                "⚠️ Só o dono (`DISCORD_OWNER_ID`) pode renovar o token.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            await asyncio.to_thread(youtube.complete_oauth_flow, interaction.user.id, redirect_url)
+        except (LookupError, ValueError) as exc:
+            await interaction.followup.send(f"❌ {exc}", ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            "✅ Token renovado. Backup do anterior em `token.pickle.old`.",
+            ephemeral=True,
+        )
+
+    return group
+
+
 def register_commands(
     tree: app_commands.CommandTree,
     guild: discord.abc.Snowflake | None = None,
@@ -395,3 +500,4 @@ def register_commands(
     tree.add_command(cmd_preview_stale, guild=guild)
     tree.add_command(cmd_godbolt, guild=guild)
     tree.add_command(_build_config_group(), guild=guild)
+    tree.add_command(_build_token_group(), guild=guild)
