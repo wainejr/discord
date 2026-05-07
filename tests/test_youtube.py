@@ -333,3 +333,79 @@ def test_pending_flows_expire_after_ttl(monkeypatch):
     youtube._PENDING_FLOWS[42] = (fake_flow, "s1", time.time() - 1)  # already expired
     youtube._prune_expired_pending_flows()
     assert 42 not in youtube._PENDING_FLOWS
+
+
+# ---------------------------------------------------------------------------
+# Refresh-token issuance tracking (the actual 7-day countdown)
+# ---------------------------------------------------------------------------
+
+
+def test_record_refresh_issuance_writes_iso_timestamp():
+    youtube._record_refresh_issuance()
+    assert youtube.REFRESH_ISSUED_PATH.exists()
+    raw = youtube.REFRESH_ISSUED_PATH.read_text()
+    parsed = datetime.fromisoformat(raw)
+    assert parsed.tzinfo is not None
+    assert abs((parsed - datetime.now(UTC)).total_seconds()) < 5
+
+
+def test_get_refresh_token_issued_at_returns_none_when_missing():
+    assert youtube.get_refresh_token_issued_at() is None
+
+
+def test_get_refresh_token_issued_at_normalizes_naive_iso():
+    """Legacy file written by an earlier bot version may lack tz suffix."""
+    youtube.REFRESH_ISSUED_PATH.write_text("2026-05-01T00:00:00")
+    parsed = youtube.get_refresh_token_issued_at()
+    assert parsed is not None and parsed.tzinfo is not None
+
+
+def test_get_refresh_token_issued_at_returns_none_on_garbage():
+    youtube.REFRESH_ISSUED_PATH.write_text("not a timestamp")
+    assert youtube.get_refresh_token_issued_at() is None
+
+
+def test_refresh_token_time_to_expire_none_when_no_token():
+    assert youtube.get_refresh_token_time_to_expire(7) is None
+
+
+def test_refresh_token_time_to_expire_bootstraps_missing_sidecar(token_future):
+    """Existing install upgraded — no sidecar yet. Bootstrap with `now` and
+    return ttl_days * 86400 (within tolerance)."""
+    seconds = youtube.get_refresh_token_time_to_expire(7)
+    assert seconds is not None
+    assert 7 * 86400 - 5 < seconds <= 7 * 86400
+    assert youtube.REFRESH_ISSUED_PATH.exists()
+
+
+def test_refresh_token_time_to_expire_negative_when_past_deadline(token_future):
+    """Sidecar 8 days old + 7-day TTL → expired."""
+    youtube._record_refresh_issuance(now=datetime.now(UTC) - timedelta(days=8))
+    seconds = youtube.get_refresh_token_time_to_expire(7)
+    assert seconds is not None and seconds < 0
+
+
+def test_refresh_token_time_to_expire_honors_custom_ttl(token_future):
+    youtube._record_refresh_issuance(now=datetime.now(UTC) - timedelta(days=10))
+    # 30-day TTL means we still have ~20 days left, even though the
+    # default 7-day TTL would say "expired".
+    seconds = youtube.get_refresh_token_time_to_expire(30)
+    assert seconds is not None and seconds > 19 * 86400
+
+
+def test_complete_oauth_flow_records_refresh_issuance(monkeypatch):
+    fake_creds = MagicMock(name="Credentials")
+    fake_creds.to_json.return_value = '{"token": "fresh"}'
+    fake_flow = MagicMock(name="Flow")
+    fake_flow.credentials = fake_creds
+    youtube._PENDING_FLOWS[42] = (fake_flow, "s1", time.time() + 600)
+
+    youtube.complete_oauth_flow(
+        user_id=42,
+        redirect_url="http://localhost/?code=abc&state=s1",
+    )
+
+    assert youtube.REFRESH_ISSUED_PATH.exists()
+    parsed = youtube.get_refresh_token_issued_at()
+    assert parsed is not None
+    assert abs((parsed - datetime.now(UTC)).total_seconds()) < 5

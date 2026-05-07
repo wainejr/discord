@@ -14,6 +14,19 @@ from acelerado.store import LineSetStore
 
 logger = logging.getLogger(__name__)
 
+
+def _format_duration(seconds: float) -> str:
+    """Render a non-negative seconds count as the largest sensible unit (d/h/m)."""
+    seconds = abs(int(seconds))
+    if seconds >= 86400:
+        return f"{seconds // 86400}d {(seconds % 86400) // 3600}h"
+    if seconds >= 3600:
+        return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+    if seconds >= 60:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
 CHAT_MSG_ADD = "chat-registradores"
 ROLE_NAME_APOIADORES = "Registradores"
 ROLE_NAME_YT_MEMBER_SUBSTRING = "YouTube Member"
@@ -155,8 +168,14 @@ class AceleradoState:
     # ------------------------------------------------------------------
 
     async def check_expiration(self) -> None:
-        expiration_time = youtube.get_token_time_to_expire()
-        if expiration_time is None or expiration_time >= (3600 * 24):
+        # The 1h "access token" expiry is auto-refreshed by google-auth on
+        # every call — warning about it is meaningless. The thing that
+        # actually requires operator action is the *refresh token*, which
+        # Google caps at 7 days for "Testing"-mode OAuth apps. Issuance
+        # time is tracked in REFRESH_ISSUED_PATH; TTL comes from config.
+        ttl_days = get_env().ACELERADO_REFRESH_TOKEN_TTL_DAYS
+        seconds_left = youtube.get_refresh_token_time_to_expire(ttl_days)
+        if seconds_left is None or seconds_left >= (3600 * 24):
             return
 
         diff_last_msg = (datetime.now(UTC) - self.last_msg_expiry).total_seconds()
@@ -164,13 +183,22 @@ class AceleradoState:
             return
 
         self.last_msg_expiry = datetime.now(UTC)
-        expiry_date = youtube.get_token_expiration_date()
-        if expiration_time < 0:
-            head = f"⚠️ Token YouTube **expirou** há {int(-expiration_time)}s (em {expiry_date})."
-            log_msg = f"Token expired {int(-expiration_time)}s ago. Renew it."
+        issued_at = youtube.get_refresh_token_issued_at()
+        deadline = issued_at + timedelta(days=ttl_days) if issued_at else None
+        deadline_str = deadline.strftime("%Y-%m-%d %H:%M UTC") if deadline else "?"
+        if seconds_left < 0:
+            head = (
+                f"⚠️ Refresh token YouTube **expirou** há "
+                f"{_format_duration(-seconds_left)} (em {deadline_str}). "
+                "Bot vai falhar na próxima chamada à API."
+            )
+            log_msg = f"Refresh token expired {int(-seconds_left)}s ago. Renew it."
         else:
-            head = f"⚠️ Token YouTube expira em {int(expiration_time)}s (em {expiry_date})."
-            log_msg = f"Token expires in {int(expiration_time)}s. Renew it."
+            head = (
+                f"⚠️ Refresh token YouTube expira em {_format_duration(seconds_left)} "
+                f"(em {deadline_str})."
+            )
+            log_msg = f"Refresh token expires in {int(seconds_left)}s. Renew it."
         hint = "Renove com `/token renew-start` (DM com o link do Google)."
         channel = self.channel_log
         if channel is None:

@@ -187,19 +187,30 @@ def refresh_token() -> None:
 
 @app.command()
 def status() -> None:
-    """Print YouTube token expiry and published-video count."""
+    """Print YouTube refresh-token expiry and published-video count."""
+    from datetime import timedelta
+
     from acelerado import youtube
+    from acelerado.env import get_env
     from acelerado.state import FILENAME_PUBLISHED
 
-    expiry = youtube.get_token_expiration_date()
-    seconds = youtube.get_token_time_to_expire()
-    if expiry is None or seconds is None:
-        token_line = "[yellow]No cached token[/]"
-    elif seconds <= 0:
-        token_line = f"[red bold]EXPIRED[/] at {expiry:%Y-%m-%d %H:%M:%S}"
+    ttl_days = get_env().ACELERADO_REFRESH_TOKEN_TTL_DAYS
+    issued = youtube.get_refresh_token_issued_at()
+    seconds = youtube.get_refresh_token_time_to_expire(ttl_days)
+
+    if seconds is None or issued is None:
+        token_line = "[yellow]No cached refresh token[/]"
     else:
-        days = int(seconds // 86400)
-        token_line = f"[green]expires in {days}d[/] (at {expiry:%Y-%m-%d %H:%M:%S})"
+        deadline = issued + timedelta(days=ttl_days)
+        if seconds <= 0:
+            token_line = f"[red bold]EXPIRED[/] (deadline was {deadline:%Y-%m-%d %H:%M:%S})"
+        else:
+            days = int(seconds // 86400)
+            hours = int((seconds % 86400) // 3600)
+            color = "red" if seconds < 86400 else "green"
+            token_line = (
+                f"[{color}]expires in {days}d {hours}h[/] (at {deadline:%Y-%m-%d %H:%M:%S})"
+            )
 
     if FILENAME_PUBLISHED.exists():
         ids = [line for line in FILENAME_PUBLISHED.read_text().splitlines() if line.strip()]
@@ -207,8 +218,8 @@ def status() -> None:
     else:
         published_line = "[yellow]published.txt not initialized[/]"
 
-    console.print(f"YouTube token: {token_line}")
-    console.print(f"Announcements: {published_line}")
+    console.print(f"YouTube refresh token: {token_line}")
+    console.print(f"Announcements:         {published_line}")
 
 
 @app.command()

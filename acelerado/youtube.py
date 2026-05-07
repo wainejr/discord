@@ -2,7 +2,7 @@ import json
 import logging
 import pickle
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -20,6 +20,15 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 TOKEN_PATH = Path("token.pickle")
 CREDENTIALS_PATH = Path("credentials.json")
 
+# Sidecar file recording when the *refresh token* (not the 1h access
+# token) was last issued. Google doesn't expose refresh-token expiry —
+# they enforce a 7-day cap server-side for "Testing"-mode OAuth apps and
+# silently bounce refresh attempts after that — so we track issuance
+# ourselves to drive the renewal-warning countdown. Written by both the
+# CLI consent flow and the Discord `/token renew-finish` flow; NEVER
+# touched on access-token refresh.
+REFRESH_ISSUED_PATH = Path("token_refresh_issued_at.txt")
+
 # Redirect URI for the Discord-driven renewal flow. Google deprecated true
 # OOB (`urn:ietf:wg:oauth:2.0:oob`) in Oct 2022, so we use loopback — the
 # user's browser hits an unreachable URL after consent and they paste the
@@ -32,6 +41,65 @@ OAUTH_REDIRECT_URI = "http://localhost"
 # restart; user just re-runs `/token renew-start`.
 OAUTH_PENDING_TTL_SECONDS = 600
 _PENDING_FLOWS: dict[int, tuple[Flow, str, float]] = {}
+
+
+def _record_refresh_issuance(now: datetime | None = None) -> None:
+    """Persist 'a fresh refresh token was just issued at this UTC instant'.
+
+    Called only from paths that mint a new refresh token (CLI consent
+    flow, `/token renew-finish`). Access-token refreshes don't touch
+    this file — that's the whole point.
+    """
+    stamp = (now or datetime.now(UTC)).isoformat()
+    REFRESH_ISSUED_PATH.write_text(stamp, encoding="utf-8")
+
+
+def get_refresh_token_issued_at() -> datetime | None:
+    """Return the recorded refresh-token issuance instant (aware UTC), or None."""
+    if not REFRESH_ISSUED_PATH.exists():
+        return None
+    raw = REFRESH_ISSUED_PATH.read_text(encoding="utf-8").strip()
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        logger.warning(f"{REFRESH_ISSUED_PATH} has unparseable contents: {raw!r}")
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def get_refresh_token_time_to_expire(ttl_days: int) -> float | None:
+    """Seconds until the refresh token is assumed dead.
+
+    Returns ``None`` when there's no `token.pickle` *or* the cached creds
+    have no refresh_token (e.g. a never-completed consent flow). When
+    `token.pickle` exists but the issuance sidecar doesn't (existing
+    install upgraded to a bot with this feature), bootstrap the sidecar
+    with `now` — conservative: warning is silenced for the next
+    `ttl_days` even though the actual refresh token may be older. User
+    can re-run `/token renew-start` to reset the clock honestly.
+    """
+    if not TOKEN_PATH.exists():
+        return None
+    try:
+        with TOKEN_PATH.open("rb") as token:
+            cred_json = pickle.load(token)
+        creds = Credentials.from_authorized_user_info(json.loads(cred_json), SCOPES)
+    except Exception as exc:
+        logger.warning(f"Failed to read {TOKEN_PATH} for refresh-token check: {exc}")
+        return None
+    if not creds.refresh_token:
+        return None
+
+    issued = get_refresh_token_issued_at()
+    if issued is None:
+        _record_refresh_issuance()
+        issued = get_refresh_token_issued_at()
+        if issued is None:
+            return None
+    deadline = issued + timedelta(days=ttl_days)
+    return (deadline - datetime.now(UTC)).total_seconds()
 
 
 def get_creds() -> Credentials:
@@ -47,6 +115,7 @@ def get_creds() -> Credentials:
         else:
             flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_PATH), SCOPES)
             creds = flow.run_local_server(port=0)
+            _record_refresh_issuance()
         with TOKEN_PATH.open("wb") as token:
             pickle.dump(creds.to_json(), token)
     return creds
@@ -120,6 +189,7 @@ def complete_oauth_flow(user_id: int, redirect_url: str) -> None:
     with tmp.open("wb") as f:
         pickle.dump(creds.to_json(), f)
     tmp.replace(TOKEN_PATH)
+    _record_refresh_issuance()
 
     _youtube.cache_clear()
     get_upload_playlist_id.cache_clear()

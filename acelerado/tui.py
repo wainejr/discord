@@ -85,13 +85,17 @@ class MonitorApp(App):
 
     def refresh_data(self) -> None:
         try:
-            seconds = youtube.get_token_time_to_expire()
-            expiry = youtube.get_token_expiration_date()
+            from acelerado.env import get_env
+
+            ttl_days = get_env().ACELERADO_REFRESH_TOKEN_TTL_DAYS
+            seconds = youtube.get_refresh_token_time_to_expire(ttl_days)
+            issued = youtube.get_refresh_token_issued_at()
+            deadline = issued + timedelta(days=ttl_days) if issued else None
         except Exception as e:
             self.query_one("#token", Static).update(f"[red]Token read error:[/] {e}")
         else:
             self.query_one("#token", Static).update(
-                f"[bold]YouTube OAuth token[/]\nExpires in: {_format_expiry(seconds, expiry)}"
+                f"[bold]YouTube refresh token[/]\nExpires in: {_format_expiry(seconds, deadline)}"
             )
 
         self.query_one("#metrics", Static).update(_render_metrics_panel())

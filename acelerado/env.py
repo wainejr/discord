@@ -28,6 +28,14 @@ class EnvCfg(BaseSettings):
     # is a stricter gate than "anyone with Manage Server".
     DISCORD_OWNER_ID: int = 0
 
+    # Refresh-token lifetime in days, used for the renewal-warning
+    # countdown. Google caps refresh tokens at 7 days for OAuth apps
+    # still in "Testing" mode in the Cloud Console; "In production" apps
+    # issue effectively-indefinite tokens — set this to 9999 in that case.
+    # Has no effect on Google's actual server-side enforcement; only
+    # tunes when the bot starts asking the operator to renew.
+    ACELERADO_REFRESH_TOKEN_TTL_DAYS: int = 7
+
     # How often the periodic job runs. 300s is the production default; dropping
     # this in dev lets you exercise the loop faster.
     ACELERADO_TICK_SECONDS: int = 300

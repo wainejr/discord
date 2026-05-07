@@ -233,34 +233,45 @@ async def test_announce_video_no_thread_when_disabled(
 
 
 async def test_check_expiration_warns_when_under_24h(built_state, fake_guild, monkeypatch):
-    monkeypatch.setattr(yt_mod, "get_token_time_to_expire", lambda: 3600)
-    monkeypatch.setattr(yt_mod, "get_token_expiration_date", lambda: datetime.now(UTC))
+    monkeypatch.setattr(yt_mod, "get_refresh_token_time_to_expire", lambda ttl: 3600)
+    monkeypatch.setattr(yt_mod, "get_refresh_token_issued_at", lambda: datetime.now(UTC))
 
     await built_state.check_expiration()
     fake_guild._log.send.assert_awaited_once()
 
 
 async def test_check_expiration_silent_when_more_than_24h(built_state, fake_guild, monkeypatch):
-    monkeypatch.setattr(yt_mod, "get_token_time_to_expire", lambda: 3600 * 48)
+    monkeypatch.setattr(yt_mod, "get_refresh_token_time_to_expire", lambda ttl: 3600 * 48)
+    await built_state.check_expiration()
+    fake_guild._log.send.assert_not_awaited()
+
+
+async def test_check_expiration_silent_when_no_issuance_recorded(
+    built_state, fake_guild, monkeypatch
+):
+    """Bootstrap path — no token recorded yet, don't spam warnings."""
+    monkeypatch.setattr(yt_mod, "get_refresh_token_time_to_expire", lambda ttl: None)
     await built_state.check_expiration()
     fake_guild._log.send.assert_not_awaited()
 
 
 async def test_check_expiration_says_expired_when_negative(built_state, fake_guild, monkeypatch):
     """Negative time-to-expire means already-expired — say so, don't say 'will expire'."""
-    monkeypatch.setattr(yt_mod, "get_token_time_to_expire", lambda: -3600)
-    monkeypatch.setattr(yt_mod, "get_token_expiration_date", lambda: datetime.now(UTC))
+    monkeypatch.setattr(yt_mod, "get_refresh_token_time_to_expire", lambda ttl: -3600)
+    monkeypatch.setattr(yt_mod, "get_refresh_token_issued_at", lambda: datetime.now(UTC))
 
     await built_state.check_expiration()
     fake_guild._log.send.assert_awaited_once()
     msg = fake_guild._log.send.await_args.args[0]
     assert "expirou" in msg.lower()
     assert "/token renew-start" in msg
+    # Refresh-token wording, not access-token.
+    assert "refresh" in msg.lower()
 
 
 async def test_check_expiration_hints_renew_command_when_soon(built_state, fake_guild, monkeypatch):
-    monkeypatch.setattr(yt_mod, "get_token_time_to_expire", lambda: 3600)
-    monkeypatch.setattr(yt_mod, "get_token_expiration_date", lambda: datetime.now(UTC))
+    monkeypatch.setattr(yt_mod, "get_refresh_token_time_to_expire", lambda ttl: 3600)
+    monkeypatch.setattr(yt_mod, "get_refresh_token_issued_at", lambda: datetime.now(UTC))
 
     await built_state.check_expiration()
     msg = fake_guild._log.send.await_args.args[0]
@@ -269,9 +280,26 @@ async def test_check_expiration_hints_renew_command_when_soon(built_state, fake_
     assert "expirou" not in msg.lower()
 
 
+async def test_check_expiration_uses_configured_ttl_days(built_state, fake_guild, monkeypatch):
+    """The TTL config value flows through to the refresh-token check."""
+    captured: list[int] = []
+
+    def spy(ttl_days: int) -> float:
+        captured.append(ttl_days)
+        return 3600 * 48  # silent
+
+    monkeypatch.setenv("ACELERADO_REFRESH_TOKEN_TTL_DAYS", "30")
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    monkeypatch.setattr(yt_mod, "get_refresh_token_time_to_expire", spy)
+    await built_state.check_expiration()
+    assert captured == [30]
+
+
 async def test_check_expiration_rate_limits_to_one_per_hour(built_state, fake_guild, monkeypatch):
-    monkeypatch.setattr(yt_mod, "get_token_time_to_expire", lambda: 60)
-    monkeypatch.setattr(yt_mod, "get_token_expiration_date", lambda: datetime.now(UTC))
+    monkeypatch.setattr(yt_mod, "get_refresh_token_time_to_expire", lambda ttl: 60)
+    monkeypatch.setattr(yt_mod, "get_refresh_token_issued_at", lambda: datetime.now(UTC))
 
     await built_state.check_expiration()
     await built_state.check_expiration()  # second call within the rate window

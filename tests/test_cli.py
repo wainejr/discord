@@ -21,7 +21,7 @@ def test_status_without_token_or_published(chdir_tmp):
     # Fresh cwd -> no token.pickle and no published.txt
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
-    assert "No cached token" in result.stdout
+    assert "No cached refresh token" in result.stdout
     assert "published.txt not initialized" in result.stdout
 
 
@@ -30,14 +30,18 @@ def test_status_with_token_and_published(chdir_tmp, token_future):
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
     assert "3 published video(s)" in result.stdout
-    # Token isn't expired, so we shouldn't see that banner
+    # Bootstrap path: status fills in `now` for issuance, so a fresh
+    # token should look like ~7 days remaining, not expired.
     assert "EXPIRED" not in result.stdout
 
 
-def test_status_expired_token(chdir_tmp, write_token):
+def test_status_expired_refresh_token(chdir_tmp, token_future):
+    """Refresh-token issuance well in the past -> banner shows EXPIRED."""
     from datetime import datetime, timedelta
 
-    write_token(datetime.now(UTC) - timedelta(hours=1))
+    from acelerado import youtube
+
+    youtube._record_refresh_issuance(now=datetime.now(UTC) - timedelta(days=10))
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
     assert "EXPIRED" in result.stdout
