@@ -246,6 +246,29 @@ async def test_check_expiration_silent_when_more_than_24h(built_state, fake_guil
     fake_guild._log.send.assert_not_awaited()
 
 
+async def test_check_expiration_says_expired_when_negative(built_state, fake_guild, monkeypatch):
+    """Negative time-to-expire means already-expired — say so, don't say 'will expire'."""
+    monkeypatch.setattr(yt_mod, "get_token_time_to_expire", lambda: -3600)
+    monkeypatch.setattr(yt_mod, "get_token_expiration_date", lambda: datetime.now(UTC))
+
+    await built_state.check_expiration()
+    fake_guild._log.send.assert_awaited_once()
+    msg = fake_guild._log.send.await_args.args[0]
+    assert "expirou" in msg.lower()
+    assert "/token renew-start" in msg
+
+
+async def test_check_expiration_hints_renew_command_when_soon(built_state, fake_guild, monkeypatch):
+    monkeypatch.setattr(yt_mod, "get_token_time_to_expire", lambda: 3600)
+    monkeypatch.setattr(yt_mod, "get_token_expiration_date", lambda: datetime.now(UTC))
+
+    await built_state.check_expiration()
+    msg = fake_guild._log.send.await_args.args[0]
+    assert "/token renew-start" in msg
+    # Don't claim it's expired when it isn't.
+    assert "expirou" not in msg.lower()
+
+
 async def test_check_expiration_rate_limits_to_one_per_hour(built_state, fake_guild, monkeypatch):
     monkeypatch.setattr(yt_mod, "get_token_time_to_expire", lambda: 60)
     monkeypatch.setattr(yt_mod, "get_token_expiration_date", lambda: datetime.now(UTC))

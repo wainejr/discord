@@ -407,6 +407,168 @@ async def test_config_unset_reverts_to_fallback(chdir_tmp):
     assert get_settings().cfg.ACELERADO_TICK_SECONDS == 300  # back to default
 
 
+# ---------------------------------------------------------------------------
+# /token group — owner-only OAuth renewal
+# ---------------------------------------------------------------------------
+
+
+def test_register_token_group():
+    tree = _build_tree()
+    guild = discord.Object(id=1)
+    register_commands(tree, guild=guild)
+    cmd = tree.get_command("token", guild=guild)
+    assert cmd is not None
+    assert isinstance(cmd, app_commands.Group)
+    sub_names = {c.name for c in cmd.commands}
+    assert sub_names == {"renew-start", "renew-finish"}
+
+
+def _get_token_subcommand(name: str):
+    tree = _build_tree()
+    guild = discord.Object(id=1)
+    register_commands(tree, guild=guild)
+    group = tree.get_command("token", guild=guild)
+    assert isinstance(group, app_commands.Group)
+    for cmd in group.commands:
+        if cmd.name == name:
+            return cmd
+    raise AssertionError(f"subcommand {name!r} not registered")
+
+
+def _make_token_interaction(user_id: int):
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.user = MagicMock()
+    interaction.user.id = user_id
+    interaction.user.create_dm = AsyncMock()
+    dm_channel = MagicMock()
+    dm_channel.send = AsyncMock()
+    interaction.user.create_dm.return_value = dm_channel
+    interaction.response = MagicMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+    return interaction, dm_channel
+
+
+async def test_token_renew_start_rejects_non_owner(monkeypatch):
+    monkeypatch.setenv("DISCORD_OWNER_ID", "999")
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    cmd = _get_token_subcommand("renew-start")
+    interaction, _ = _make_token_interaction(user_id=42)
+    await cmd.callback(interaction)
+    interaction.response.send_message.assert_awaited_once()
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "dono" in msg.lower()
+
+
+async def test_token_renew_start_rejects_when_owner_unset(monkeypatch):
+    """Default DISCORD_OWNER_ID=0 — even matching users get refused."""
+    cmd = _get_token_subcommand("renew-start")
+    interaction, _ = _make_token_interaction(user_id=0)
+    await cmd.callback(interaction)
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "dono" in msg.lower()
+
+
+async def test_token_renew_start_dms_url_for_owner(monkeypatch):
+    monkeypatch.setenv("DISCORD_OWNER_ID", "42")
+    from acelerado import youtube
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    monkeypatch.setattr(youtube, "start_oauth_flow", lambda uid: f"https://google/auth?uid={uid}")
+
+    cmd = _get_token_subcommand("renew-start")
+    interaction, dm_channel = _make_token_interaction(user_id=42)
+    await cmd.callback(interaction)
+
+    dm_channel.send.assert_awaited_once()
+    sent = dm_channel.send.await_args.args[0]
+    assert "https://google/auth?uid=42" in sent
+    interaction.response.send_message.assert_awaited_once()
+    assert "DM" in interaction.response.send_message.await_args.args[0]
+
+
+async def test_token_renew_start_handles_blocked_dm(monkeypatch):
+    monkeypatch.setenv("DISCORD_OWNER_ID", "42")
+    from acelerado import youtube
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    monkeypatch.setattr(youtube, "start_oauth_flow", lambda uid: "https://google/auth")
+
+    cmd = _get_token_subcommand("renew-start")
+    interaction, dm_channel = _make_token_interaction(user_id=42)
+    dm_channel.send.side_effect = discord.Forbidden(MagicMock(status=403), "blocked")
+
+    await cmd.callback(interaction)
+    msg = interaction.response.send_message.await_args.args[0]
+    assert "DM" in msg
+
+
+async def test_token_renew_finish_rejects_non_owner(monkeypatch):
+    monkeypatch.setenv("DISCORD_OWNER_ID", "999")
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    cmd = _get_token_subcommand("renew-finish")
+    interaction, _ = _make_token_interaction(user_id=42)
+    await cmd.callback(interaction, redirect_url="http://localhost/?code=x&state=y")
+    interaction.response.send_message.assert_awaited_once()
+
+
+async def test_token_renew_finish_surfaces_value_error(monkeypatch):
+    monkeypatch.setenv("DISCORD_OWNER_ID", "42")
+    from acelerado import youtube
+    from acelerado.config import reload_settings
+
+    reload_settings()
+
+    def boom(user_id, url):
+        raise ValueError("State mismatch — refusing")
+
+    monkeypatch.setattr(youtube, "complete_oauth_flow", boom)
+
+    cmd = _get_token_subcommand("renew-finish")
+    interaction, _ = _make_token_interaction(user_id=42)
+    await cmd.callback(interaction, redirect_url="http://localhost/?code=x&state=evil")
+    interaction.followup.send.assert_awaited_once()
+    msg = interaction.followup.send.await_args.args[0]
+    assert "State mismatch" in msg
+
+
+async def test_token_renew_finish_happy_path(monkeypatch):
+    monkeypatch.setenv("DISCORD_OWNER_ID", "42")
+    from acelerado import youtube
+    from acelerado.config import reload_settings
+
+    reload_settings()
+    called = {}
+
+    def fake_complete(user_id, url):
+        called["uid"] = user_id
+        called["url"] = url
+
+    monkeypatch.setattr(youtube, "complete_oauth_flow", fake_complete)
+
+    cmd = _get_token_subcommand("renew-finish")
+    interaction, _ = _make_token_interaction(user_id=42)
+    await cmd.callback(interaction, redirect_url="http://localhost/?code=abc&state=xyz")
+
+    assert called == {"uid": 42, "url": "http://localhost/?code=abc&state=xyz"}
+    interaction.followup.send.assert_awaited_once()
+    msg = interaction.followup.send.await_args.args[0]
+    assert "renovado" in msg.lower()
+
+
+# ---------------------------------------------------------------------------
+# /update ok path (happy)
+# ---------------------------------------------------------------------------
+
+
 async def test_update_command_ok_schedules_restart(monkeypatch):
     import asyncio
 

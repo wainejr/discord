@@ -6,6 +6,7 @@ actual YouTube API is stubbed via ``monkeypatch`` on ``youtube._youtube``.
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
@@ -223,3 +224,112 @@ def test_time_to_expire_negative_for_past_token(write_token):
     seconds = youtube.get_token_time_to_expire()
     assert seconds is not None
     assert seconds < 0
+
+
+# ---------------------------------------------------------------------------
+# Discord-initiated OAuth renewal flow
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_pending_flows():
+    youtube._PENDING_FLOWS.clear()
+    yield
+    youtube._PENDING_FLOWS.clear()
+
+
+@pytest.fixture
+def fake_credentials_file(tmp_path):
+    """Write a minimal installed-app credentials.json into the test cwd."""
+    payload = {
+        "installed": {
+            "client_id": "fake-client-id.apps.googleusercontent.com",
+            "client_secret": "fake-secret",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": ["http://localhost"],
+        }
+    }
+    path = tmp_path / "credentials.json"
+    path.write_text(__import__("json").dumps(payload))
+    return path
+
+
+def test_start_oauth_flow_missing_credentials_raises():
+    with pytest.raises(FileNotFoundError):
+        youtube.start_oauth_flow(user_id=42)
+
+
+def test_start_oauth_flow_returns_url_and_parks_flow(monkeypatch, fake_credentials_file):
+    fake_flow = MagicMock(name="Flow")
+    fake_flow.authorization_url.return_value = (
+        "https://accounts.google.com/o/oauth2/auth?state=abc123",
+        "abc123",
+    )
+    monkeypatch.setattr(
+        youtube.Flow,
+        "from_client_secrets_file",
+        classmethod(lambda cls, *a, **kw: fake_flow),
+    )
+
+    url = youtube.start_oauth_flow(user_id=42)
+    assert "state=abc123" in url
+    assert 42 in youtube._PENDING_FLOWS
+    parked_flow, state, _ = youtube._PENDING_FLOWS[42]
+    assert parked_flow is fake_flow
+    assert state == "abc123"
+
+
+def test_complete_oauth_flow_no_pending_raises():
+    with pytest.raises(LookupError):
+        youtube.complete_oauth_flow(user_id=42, redirect_url="http://localhost/?code=x&state=y")
+
+
+def test_complete_oauth_flow_state_mismatch_rejects(monkeypatch):
+    youtube._PENDING_FLOWS[42] = (MagicMock(name="Flow"), "expected-state", time.time() + 600)
+    with pytest.raises(ValueError, match="State mismatch"):
+        youtube.complete_oauth_flow(
+            user_id=42,
+            redirect_url="http://localhost/?code=abc&state=evil-state",
+        )
+    # Flow consumed even on mismatch — user must restart
+    assert 42 not in youtube._PENDING_FLOWS
+
+
+def test_complete_oauth_flow_missing_code_rejects():
+    youtube._PENDING_FLOWS[42] = (MagicMock(name="Flow"), "s1", time.time() + 600)
+    with pytest.raises(ValueError, match="no `code=` parameter"):
+        youtube.complete_oauth_flow(
+            user_id=42,
+            redirect_url="http://localhost/?state=s1",
+        )
+
+
+def test_complete_oauth_flow_writes_token_and_busts_cache(monkeypatch, tmp_path):
+    fake_creds = MagicMock(name="Credentials")
+    fake_creds.to_json.return_value = '{"token": "fresh"}'
+    fake_flow = MagicMock(name="Flow")
+    fake_flow.credentials = fake_creds
+    youtube._PENDING_FLOWS[42] = (fake_flow, "stateXYZ", time.time() + 600)
+
+    # Pre-existing token must be backed up, not silently overwritten.
+    youtube.TOKEN_PATH.write_bytes(b"old-token-bytes")
+
+    youtube.complete_oauth_flow(
+        user_id=42,
+        redirect_url="http://localhost/?code=abc&state=stateXYZ",
+    )
+
+    fake_flow.fetch_token.assert_called_once()
+    assert youtube.TOKEN_PATH.exists()
+    backup = youtube.TOKEN_PATH.with_name(youtube.TOKEN_PATH.name + ".old")
+    assert backup.exists() and backup.read_bytes() == b"old-token-bytes"
+    # Pending entry consumed
+    assert 42 not in youtube._PENDING_FLOWS
+
+
+def test_pending_flows_expire_after_ttl(monkeypatch):
+    fake_flow = MagicMock(name="Flow")
+    youtube._PENDING_FLOWS[42] = (fake_flow, "s1", time.time() - 1)  # already expired
+    youtube._prune_expired_pending_flows()
+    assert 42 not in youtube._PENDING_FLOWS

@@ -165,15 +165,19 @@ class AceleradoState:
 
         self.last_msg_expiry = datetime.now(UTC)
         expiry_date = youtube.get_token_expiration_date()
+        if expiration_time < 0:
+            head = f"⚠️ Token YouTube **expirou** há {int(-expiration_time)}s (em {expiry_date})."
+            log_msg = f"Token expired {int(-expiration_time)}s ago. Renew it."
+        else:
+            head = f"⚠️ Token YouTube expira em {int(expiration_time)}s (em {expiry_date})."
+            log_msg = f"Token expires in {int(expiration_time)}s. Renew it."
+        hint = "Renove com `/token renew-start` (DM com o link do Google)."
         channel = self.channel_log
         if channel is None:
             logger.warning("Log channel disappeared from cache; skipping warning")
         else:
-            await channel.send(
-                f"Renew your Token! It will expire in {int(expiration_time)} seconds "
-                f"(at {expiry_date})."
-            )
-        logger.warning(f"Your token will expire in {int(expiration_time)} seconds. Renew it.")
+            await channel.send(f"{head}\n{hint}")
+        logger.warning(log_msg)
 
     # ------------------------------------------------------------------
     # YouTube Member role sync — walks *all* tiers, not just the first.

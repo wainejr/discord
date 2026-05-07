@@ -21,6 +21,13 @@ class EnvCfg(BaseSettings):
     YOUTUBE_API_KEY: str
     DISCORD_GUILD_ID: int
 
+    # Discord user ID allowed to run sensitive owner-only slash commands
+    # (`/token renew-start` etc.). 0 disables them — they refuse with a
+    # warning instead of going through. Kept separate from
+    # `default_permissions(administrator=True)` because token rotation
+    # is a stricter gate than "anyone with Manage Server".
+    DISCORD_OWNER_ID: int = 0
+
     # How often the periodic job runs. 300s is the production default; dropping
     # this in dev lets you exercise the loop faster.
     ACELERADO_TICK_SECONDS: int = 300

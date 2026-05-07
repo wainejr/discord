@@ -1,13 +1,15 @@
 import json
 import logging
 import pickle
+import time
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow, InstalledAppFlow
 from googleapiclient.discovery import build
 
 from acelerado.env import get_env
@@ -17,6 +19,19 @@ logger = logging.getLogger(__name__)
 SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 TOKEN_PATH = Path("token.pickle")
 CREDENTIALS_PATH = Path("credentials.json")
+
+# Redirect URI for the Discord-driven renewal flow. Google deprecated true
+# OOB (`urn:ietf:wg:oauth:2.0:oob`) in Oct 2022, so we use loopback — the
+# user's browser hits an unreachable URL after consent and they paste the
+# whole address back. Must be present in the OAuth client's allowed
+# redirect URIs (installed-app clients ship with `http://localhost`).
+OAUTH_REDIRECT_URI = "http://localhost"
+
+# Pending Discord-initiated flows live in memory only — keyed by Discord
+# user ID, valued (Flow, expected_state, expires_at_unix). Lost on bot
+# restart; user just re-runs `/token renew-start`.
+OAUTH_PENDING_TTL_SECONDS = 600
+_PENDING_FLOWS: dict[int, tuple[Flow, str, float]] = {}
 
 
 def get_creds() -> Credentials:
@@ -35,6 +50,79 @@ def get_creds() -> Credentials:
         with TOKEN_PATH.open("wb") as token:
             pickle.dump(creds.to_json(), token)
     return creds
+
+
+def _prune_expired_pending_flows() -> None:
+    now = time.time()
+    expired = [uid for uid, (_, _, exp) in _PENDING_FLOWS.items() if exp < now]
+    for uid in expired:
+        _PENDING_FLOWS.pop(uid, None)
+
+
+def start_oauth_flow(user_id: int) -> str:
+    """Begin a Discord-initiated OAuth consent and return the auth URL.
+
+    The pending :class:`Flow` is parked in memory keyed by ``user_id`` so
+    :func:`complete_oauth_flow` can pick it up. Google generates a
+    CSRF-protected ``state`` token which we validate on completion.
+    Raises :class:`FileNotFoundError` if ``credentials.json`` is missing.
+    """
+    if not CREDENTIALS_PATH.exists():
+        raise FileNotFoundError(f"{CREDENTIALS_PATH} not found")
+    _prune_expired_pending_flows()
+    flow = Flow.from_client_secrets_file(
+        str(CREDENTIALS_PATH),
+        scopes=SCOPES,
+        redirect_uri=OAUTH_REDIRECT_URI,
+    )
+    auth_url, state = flow.authorization_url(prompt="consent", access_type="offline")
+    _PENDING_FLOWS[user_id] = (flow, state, time.time() + OAUTH_PENDING_TTL_SECONDS)
+    return auth_url
+
+
+def complete_oauth_flow(user_id: int, redirect_url: str) -> None:
+    """Exchange the auth code in ``redirect_url`` for credentials.
+
+    Validates the URL's ``state`` against the one issued at start (CSRF
+    guard). On success, backs the existing token to ``token.pickle.old``,
+    writes the new token atomically, and busts the cached YouTube client
+    so the next API call uses the fresh creds.
+
+    Raises:
+        LookupError: no pending flow for ``user_id`` (timed out or never started).
+        ValueError: missing/mismatched state, missing code, or token-exchange failure.
+    """
+    _prune_expired_pending_flows()
+    pending = _PENDING_FLOWS.pop(user_id, None)
+    if pending is None:
+        raise LookupError("No pending OAuth flow — run /token renew-start first")
+    flow, expected_state, _ = pending
+
+    parsed = urlparse(redirect_url.strip())
+    qs = parse_qs(parsed.query)
+    received_state = (qs.get("state") or [""])[0]
+    if not received_state or received_state != expected_state:
+        raise ValueError("State mismatch — refusing to exchange code (possible CSRF)")
+    if "code" not in qs:
+        raise ValueError("URL has no `code=` parameter — paste the FULL redirect URL")
+
+    try:
+        flow.fetch_token(authorization_response=redirect_url)
+    except Exception as exc:
+        raise ValueError(f"Token exchange failed: {exc}") from exc
+
+    creds = flow.credentials
+    if TOKEN_PATH.exists():
+        backup = Path(f"{TOKEN_PATH}.old")
+        TOKEN_PATH.replace(backup)
+
+    tmp = Path(f"{TOKEN_PATH}.tmp")
+    with tmp.open("wb") as f:
+        pickle.dump(creds.to_json(), f)
+    tmp.replace(TOKEN_PATH)
+
+    _youtube.cache_clear()
+    get_upload_playlist_id.cache_clear()
 
 
 def get_token_expiration_date() -> datetime | None:
