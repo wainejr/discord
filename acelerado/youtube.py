@@ -106,10 +106,25 @@ def complete_oauth_flow(user_id: int, redirect_url: str) -> None:
     if "code" not in qs:
         raise ValueError("URL has no `code=` parameter — paste the FULL redirect URL")
 
+    # oauthlib refuses non-HTTPS authorization responses by default. Our
+    # redirect URI is the loopback `http://localhost`, which RFC 8252 §7.3
+    # explicitly allows — the browser fails locally and nothing crosses
+    # the network. Enable the documented opt-out for the duration of the
+    # token exchange only, then restore the previous value so we don't
+    # quietly relax HTTPS enforcement everywhere.
+    import os
+
+    prev_insecure = os.environ.get("OAUTHLIB_INSECURE_TRANSPORT")
+    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
     try:
         flow.fetch_token(authorization_response=redirect_url)
     except Exception as exc:
         raise ValueError(f"Token exchange failed: {exc}") from exc
+    finally:
+        if prev_insecure is None:
+            os.environ.pop("OAUTHLIB_INSECURE_TRANSPORT", None)
+        else:
+            os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = prev_insecure
 
     creds = flow.credentials
     if TOKEN_PATH.exists():
